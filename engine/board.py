@@ -58,6 +58,12 @@ class Board:
         self.grid[from_r][from_c] = None
         self.grid[to_r][to_c] = move.piece
 
+    def undo_move(self, move):
+        from_c, from_r = move.from_pos
+        to_c, to_r = move.to_pos
+        self.grid[from_r][from_c] = move.piece
+        self.grid[to_r][to_c] = move.captured
+
     def _apply_temp_move(self, from_c, from_r, to_c, to_r):
         piece = self.get_piece(from_c, from_r)
         captured = self.get_piece(to_c, to_r)
@@ -301,3 +307,6 @@ class Board:
                     if target is None or target.side != piece.side:
                         moves.append((nc, nr))
         return moves
+    def reset(self):
+        self.grid = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+        self.setup_initial()

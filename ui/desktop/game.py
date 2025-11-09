@@ -21,6 +21,25 @@ SELECT_COLOR = (255, 215, 0)
 HINT_COLOR = (0, 150, 0)
 
 
+class Button:
+    def __init__(self, rect, label):
+        self.rect = rect
+        self.label = label
+
+    def draw(self, surface, font, enabled=True):
+        bg = (200, 200, 200) if enabled else (160, 160, 160)
+        border = (80, 80, 80)
+        pygame.draw.rect(surface, bg, self.rect, border_radius=6)
+        pygame.draw.rect(surface, border, self.rect, 2, border_radius=6)
+        text_color = (0, 0, 0)
+        text_surf = font.render(self.label, True, text_color)
+        text_rect = text_surf.get_rect(center=self.rect.center)
+        surface.blit(text_surf, text_rect)
+
+    def is_clicked(self, pos):
+        return self.rect.collidepoint(pos)
+
+
 def board_to_screen(col, row):
     x = MARGIN_X + col * CELL_SIZE
     y = MARGIN_Y + row * CELL_SIZE
@@ -104,20 +123,65 @@ def draw_move_hints(surface, moves):
 def run_game():
     pygame.init()
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("Xiangqi - PvP with checkmate")
+    pygame.display.set_caption("Xiangqi - Cờ Tướng")
 
     clock = pygame.time.Clock()
     font_piece = pygame.font.SysFont("SimHei", 28)
     font_text = pygame.font.SysFont("Consolas", 18)
+    font_button = pygame.font.SysFont("Consolas", 16)
 
     board = Board()
     current_side = Side.RED
     selected = None
     valid_moves = []
     move_history = []
+    redo_stack = []
     in_check_side = None
     game_over = False
     winner = None
+
+    panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
+    btn_takeback = Button(
+        pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 190, 30),
+        "Takeback",
+    )
+
+    btn_resign = Button(
+        pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 90, 30),
+        "Resign",
+    )
+    btn_new_game = Button(
+        pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 120, 90, 30),
+        "New game",
+    )
+
+    def reset_game():
+        nonlocal current_side, selected, valid_moves, move_history, redo_stack
+        nonlocal in_check_side, game_over, winner
+        board.reset()
+        current_side = Side.RED
+        selected = None
+        valid_moves = []
+        move_history = []
+        redo_stack = []
+        in_check_side = None
+        game_over = False
+        winner = None
+
+    def update_game_state_after_side_change():
+        nonlocal in_check_side, game_over, winner
+        if board.is_in_check(current_side):
+            in_check_side = current_side
+            if not board.has_any_legal_move(current_side):
+                game_over = True
+                winner = Side.RED if current_side == Side.BLACK else Side.BLACK
+            else:
+                game_over = False
+                winner = None
+        else:
+            in_check_side = None
+            game_over = False
+            winner = None
 
     running = True
     while running:
@@ -128,10 +192,38 @@ def run_game():
                 running = False
 
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mx, my = event.pos
+
+                if btn_takeback.is_clicked((mx, my)):
+                    if move_history:
+                        steps = min(2, len(move_history))
+                        for _ in range(steps):
+                            last_move = move_history.pop()
+                            board.undo_move(last_move)
+                            redo_stack.append(last_move)
+                            current_side = (
+                                Side.RED if current_side == Side.BLACK else Side.BLACK
+                            )
+                        update_game_state_after_side_change()
+                    continue
+
+                if btn_resign.is_clicked((mx, my)):
+                    if not game_over:
+                        game_over = True
+                        winner = Side.RED if current_side == Side.BLACK else Side.BLACK
+                        in_check_side = None
+                        selected = None
+                        valid_moves = []
+                    continue
+
+                if btn_new_game.is_clicked((mx, my)):
+                    reset_game()
+                    continue
+
+
                 if game_over:
                     continue
 
-                mx, my = event.pos
                 col, row = screen_to_board(mx, my)
                 if col is not None:
                     piece = board.get_piece(col, row)
@@ -171,24 +263,14 @@ def run_game():
                                     )
                                     board.move_piece(move)
                                     move_history.append(move)
+                                    redo_stack.clear()
 
                                     current_side = (
                                         Side.BLACK
                                         if current_side == Side.RED
                                         else Side.RED
                                     )
-
-                                    if board.is_in_check(current_side):
-                                        in_check_side = current_side
-                                        if not board.has_any_legal_move(current_side):
-                                            game_over = True
-                                            winner = (
-                                                Side.RED
-                                                if current_side == Side.BLACK
-                                                else Side.BLACK
-                                            )
-                                    else:
-                                        in_check_side = None
+                                    update_game_state_after_side_change()
                                 selected = None
                                 valid_moves = []
 
@@ -230,6 +312,10 @@ def run_game():
             screen.blit(mv_surf, (panel_x, y_log))
             y_log += 20
 
+        btn_takeback.draw(screen, font_button, enabled=bool(move_history))
+        btn_resign.draw(screen, font_button, enabled=not game_over)
+        btn_new_game.draw(screen, font_button, enabled=True)
+        
         pygame.display.flip()
 
     pygame.quit()
