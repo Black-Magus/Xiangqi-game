@@ -47,8 +47,8 @@ def board_to_screen(col, row):
 
 
 def screen_to_board(x, y):
-    col = (x - MARGIN_X) // CELL_SIZE
-    row = (y - MARGIN_Y) // CELL_SIZE
+    col = (x - MARGIN_X + CELL_SIZE // 2) // CELL_SIZE
+    row = (y - MARGIN_Y + CELL_SIZE // 2) // CELL_SIZE
     if 0 <= col < BOARD_COLS and 0 <= row < BOARD_ROWS:
         return int(col), int(row)
     return None, None
