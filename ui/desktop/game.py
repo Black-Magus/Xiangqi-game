@@ -129,6 +129,8 @@ def run_game():
     font_piece = pygame.font.SysFont("SimHei", 28)
     font_text = pygame.font.SysFont("Consolas", 18)
     font_button = pygame.font.SysFont("Consolas", 16)
+    font_title = pygame.font.SysFont("SimHei", 40, bold=True)
+
 
     board = Board()
     current_side = Side.RED
@@ -139,6 +141,9 @@ def run_game():
     in_check_side = None
     game_over = False
     winner = None
+
+    state = "menu"
+    mode = None
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
     btn_takeback = Button(
@@ -154,6 +159,33 @@ def run_game():
         pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 120, 90, 30),
         "New game",
     )
+
+    # Main menu
+    center_x = WINDOW_WIDTH // 2
+    start_y = WINDOW_HEIGHT // 2 - 80
+    btn_menu_pvp = Button(
+        pygame.Rect(center_x - 100, start_y, 200, 40),
+        "Play PvP (local)",
+    )
+    btn_menu_ai = Button(
+        pygame.Rect(center_x - 100, start_y + 50, 200, 40),
+        "Play vs AI",
+    )
+    btn_menu_settings = Button(
+        pygame.Rect(center_x - 100, start_y + 100, 200, 40),
+        "Settings",
+    )
+    btn_menu_exit = Button(
+        pygame.Rect(center_x - 100, start_y + 150, 200, 40),
+        "Exit",
+    )
+
+    # Settings button 
+    btn_settings_back = Button(
+        pygame.Rect(center_x - 60, WINDOW_HEIGHT - 100, 120, 35),
+        "Back",
+    )
+
 
     def reset_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack
@@ -183,6 +215,15 @@ def run_game():
             game_over = False
             winner = None
 
+    def switch_to_menu():
+        nonlocal state, selected, valid_moves, in_check_side, game_over, winner
+        state = "menu"
+        selected = None
+        valid_moves = []
+        in_check_side = None
+        game_over = False
+        winner = None
+
     running = True
     while running:
         dt = clock.tick(60) / 1000.0
@@ -191,59 +232,82 @@ def run_game():
             if event.type == pygame.QUIT:
                 running = False
 
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE and state != "menu":
+                    # Return to main menu ESC
+                    switch_to_menu()
+
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my = event.pos
 
-                if btn_takeback.is_clicked((mx, my)):
-                    if move_history:
-                        steps = min(2, len(move_history))
-                        for _ in range(steps):
-                            last_move = move_history.pop()
-                            board.undo_move(last_move)
-                            redo_stack.append(last_move)
-                            current_side = (
-                                Side.RED if current_side == Side.BLACK else Side.BLACK
+                # --------- STATE: MENU ----------
+                if state == "menu":
+                    if btn_menu_pvp.is_clicked((mx, my)):
+                        reset_game()
+                        mode = "pvp"
+                        state = "pvp"
+                        continue
+                    if btn_menu_ai.is_clicked((mx, my)):
+                        reset_game()
+                        mode = "ai"
+                        state = "ai"
+                        # NOTICE: PLACEHOLDER (AI not implemented)
+                        continue
+                    if btn_menu_settings.is_clicked((mx, my)):
+                        state = "settings"
+                        continue
+                    if btn_menu_exit.is_clicked((mx, my)):
+                        running = False
+                        continue
+
+                # --------- STATE: SETTINGS ----------
+                elif state == "settings":
+                    if btn_settings_back.is_clicked((mx, my)):
+                        switch_to_menu()
+                        continue
+
+                # --------- STATE: GAME (PVP / AI) ----------
+                elif state in ("pvp", "ai"):
+                    if btn_takeback.is_clicked((mx, my)):
+                        if move_history:
+                            steps = min(2, len(move_history))
+                            for _ in range(steps):
+                                last_move = move_history.pop()
+                                board.undo_move(last_move)
+                                redo_stack.append(last_move)
+                                current_side = (
+                                    Side.RED
+                                    if current_side == Side.BLACK
+                                    else Side.BLACK
+                                )
+                            update_game_state_after_side_change()
+                        continue
+
+                    if btn_resign.is_clicked((mx, my)):
+                        if not game_over:
+                            game_over = True
+                            winner = (
+                                Side.RED
+                                if current_side == Side.BLACK
+                                else Side.BLACK
                             )
-                        update_game_state_after_side_change()
-                    continue
-
-                if btn_resign.is_clicked((mx, my)):
-                    if not game_over:
-                        game_over = True
-                        winner = Side.RED if current_side == Side.BLACK else Side.BLACK
-                        in_check_side = None
-                        selected = None
-                        valid_moves = []
-                    continue
-
-                if btn_new_game.is_clicked((mx, my)):
-                    reset_game()
-                    continue
-
-
-                if game_over:
-                    continue
-
-                col, row = screen_to_board(mx, my)
-                if col is not None:
-                    piece = board.get_piece(col, row)
-                    if selected is None:
-                        if piece is not None and piece.side == current_side:
-                            selected = (col, row)
-                            valid_moves = board.generate_legal_moves(
-                                col,
-                                row,
-                                current_side,
-                            )
-                        else:
+                            in_check_side = None
                             selected = None
                             valid_moves = []
-                    else:
-                        sel_c, sel_r = selected
-                        if col == sel_c and row == sel_r:
-                            selected = None
-                            valid_moves = []
-                        else:
+                        continue
+
+                    if btn_new_game.is_clicked((mx, my)):
+                        reset_game()
+                        continue
+
+                    if game_over:
+                        continue
+
+                    # Handle click on the board
+                    col, row = screen_to_board(mx, my)
+                    if col is not None:
+                        piece = board.get_piece(col, row)
+                        if selected is None:
                             if piece is not None and piece.side == current_side:
                                 selected = (col, row)
                                 valid_moves = board.generate_legal_moves(
@@ -252,70 +316,135 @@ def run_game():
                                     current_side,
                                 )
                             else:
-                                if (col, row) in valid_moves:
-                                    moving_piece = board.get_piece(sel_c, sel_r)
-                                    captured = board.get_piece(col, row)
-                                    move = Move(
-                                        (sel_c, sel_r),
-                                        (col, row),
-                                        moving_piece,
-                                        captured,
-                                    )
-                                    board.move_piece(move)
-                                    move_history.append(move)
-                                    redo_stack.clear()
-
-                                    current_side = (
-                                        Side.BLACK
-                                        if current_side == Side.RED
-                                        else Side.RED
-                                    )
-                                    update_game_state_after_side_change()
                                 selected = None
                                 valid_moves = []
+                        else:
+                            sel_c, sel_r = selected
+                            if col == sel_c and row == sel_r:
+                                selected = None
+                                valid_moves = []
+                            else:
+                                if piece is not None and piece.side == current_side:
+                                    selected = (col, row)
+                                    valid_moves = board.generate_legal_moves(
+                                        col,
+                                        row,
+                                        current_side,
+                                    )
+                                else:
+                                    if (col, row) in valid_moves:
+                                        moving_piece = board.get_piece(sel_c, sel_r)
+                                        captured = board.get_piece(col, row)
+                                        move = Move(
+                                            (sel_c, sel_r),
+                                            (col, row),
+                                            moving_piece,
+                                            captured,
+                                        )
+                                        board.move_piece(move)
+                                        move_history.append(move)
+                                        redo_stack.clear()
 
-        draw_board(screen)
+                                        current_side = (
+                                            Side.BLACK
+                                            if current_side == Side.RED
+                                            else Side.RED
+                                        )
+                                        update_game_state_after_side_change()
+                                    selected = None
+                                    valid_moves = []
 
-        if selected is not None:
-            draw_selection(screen, *selected)
-            draw_move_hints(screen, valid_moves)
+        # ================== DRAW ==================
+        if state == "menu":
+            screen.fill((40, 40, 60))
+            title_surf = font_title.render("Xiangqi", True, (250, 250, 250))
+            title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 140))
+            screen.blit(title_surf, title_rect)
 
-        for r in range(BOARD_ROWS):
-            for c in range(BOARD_COLS):
-                piece = board.get_piece(c, r)
-                if piece is not None:
-                    draw_piece(screen, piece, c, r, font_piece)
+            subtitle = "Press Esc in game to return here"
+            sub_surf = font_text.render(subtitle, True, (220, 220, 220))
+            sub_rect = sub_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 110))
+            screen.blit(sub_surf, sub_rect)
 
-        panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
-        turn_text = f"Turn: {'RED' if current_side == Side.RED else 'BLACK'}"
-        tt_surf = font_text.render(turn_text, True, (0, 0, 0))
-        screen.blit(tt_surf, (panel_x, MARGIN_Y))
+            btn_menu_pvp.draw(screen, font_button, enabled=True)
+            btn_menu_ai.draw(screen, font_button, enabled=True)
+            btn_menu_settings.draw(screen, font_button, enabled=True)
+            btn_menu_exit.draw(screen, font_button, enabled=True)
 
-        if in_check_side is not None and not game_over:
-            msg = "CHECK on RED" if in_check_side == Side.RED else "CHECK on BLACK"
-            ck_surf = font_text.render(msg, True, (200, 0, 0))
-            screen.blit(ck_surf, (panel_x, MARGIN_Y + 25))
+        elif state in ("pvp", "ai"):
+            draw_board(screen)
 
-        if game_over and winner is not None:
-            msg = (
-                "RED wins by checkmate"
-                if winner == Side.RED
-                else "BLACK wins by checkmate"
-            )
-            win_surf = font_text.render(msg, True, (0, 0, 200))
-            screen.blit(win_surf, (panel_x, MARGIN_Y + 50))
+            if selected is not None:
+                draw_selection(screen, *selected)
+                draw_move_hints(screen, valid_moves)
 
-        y_log = MARGIN_Y + 90
-        for i, mv in enumerate(move_history[-10:]):
-            text = f"{len(move_history) - 10 + i + 1}. {mv}"
-            mv_surf = font_text.render(text, True, (0, 0, 0))
-            screen.blit(mv_surf, (panel_x, y_log))
-            y_log += 20
+            for r in range(BOARD_ROWS):
+                for c in range(BOARD_COLS):
+                    piece = board.get_piece(c, r)
+                    if piece is not None:
+                        draw_piece(screen, piece, c, r, font_piece)
 
-        btn_takeback.draw(screen, font_button, enabled=bool(move_history))
-        btn_resign.draw(screen, font_button, enabled=not game_over)
-        btn_new_game.draw(screen, font_button, enabled=True)
-        
+            # Panel
+            panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
+            mode_text = "Mode: PvP" if mode == "pvp" else "Mode: vs AI (placeholder)"
+            mt_surf = font_text.render(mode_text, True, (0, 0, 0))
+            screen.blit(mt_surf, (panel_x, MARGIN_Y))
+
+            turn_text = f"Turn: {'RED' if current_side == Side.RED else 'BLACK'}"
+            tt_surf = font_text.render(turn_text, True, (0, 0, 0))
+            screen.blit(tt_surf, (panel_x, MARGIN_Y + 20))
+
+            if in_check_side is not None and not game_over:
+                msg = "CHECK on RED" if in_check_side == Side.RED else "CHECK on BLACK"
+                ck_surf = font_text.render(msg, True, (200, 0, 0))
+                screen.blit(ck_surf, (panel_x, MARGIN_Y + 45))
+
+            if game_over and winner is not None:
+                if winner == Side.RED:
+                    msg = "RED wins"
+                elif winner == Side.BLACK:
+                    msg = "BLACK wins"
+                else:
+                    msg = "Game over"
+                win_surf = font_text.render(msg, True, (0, 0, 200))
+                screen.blit(win_surf, (panel_x, MARGIN_Y + 70))
+
+            # log moves
+            y_log = MARGIN_Y + 110
+            for i, mv in enumerate(move_history[-10:]):
+                text = f"{len(move_history) - 10 + i + 1}. {mv}"
+                mv_surf = font_text.render(text, True, (0, 0, 0))
+                screen.blit(mv_surf, (panel_x, y_log))
+                y_log += 20
+
+            # Draw buttons
+            btn_takeback.draw(screen, font_button, enabled=bool(move_history))
+            btn_resign.draw(screen, font_button, enabled=not game_over)
+            btn_new_game.draw(screen, font_button, enabled=True)
+
+        elif state == "settings":
+            screen.fill((50, 40, 40))
+            title_surf = font_title.render("Settings", True, (240, 240, 240))
+            title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, 120))
+            screen.blit(title_surf, title_rect)
+
+            lines = [
+                "Settings placeholder",
+                "- Avatar, player name",
+                "- Light/Dark mode",
+                "- Sound, animation",
+                "",
+                "Press Esc or Back to return to menu",
+            ]
+            y = 180
+            for line in lines:
+                line_surf = font_text.render(line, True, (230, 230, 230))
+                line_rect = line_surf.get_rect(center=(WINDOW_WIDTH // 2, y))
+                screen.blit(line_surf, line_rect)
+                y += 30
+
+            btn_settings_back.draw(screen, font_button, enabled=True)
+
         pygame.display.flip()
 
     pygame.quit()
