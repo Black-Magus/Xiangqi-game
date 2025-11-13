@@ -14,13 +14,138 @@ from config import (
 from engine.board import Board
 from engine.types import Side, PieceType, Move
 
-# UI Colours
-RED_COLOR = (220, 50, 50)
-BLACK_COLOR = (30, 30, 30)
-BG_COLOR = (230, 200, 150)
-BOARD_LINE_COLOR = (80, 40, 10)
-SELECT_COLOR = (255, 215, 0)
-HINT_COLOR = (0, 150, 0)
+# ---------- Localization ----------
+
+TEXT = {
+    "en": {
+        "title": "Xiangqi",
+        "subtitle": "Press Esc in game to return to menu",
+        "menu_pvp": "Play PvP (local)",
+        "menu_ai": "Play vs AI",
+        "menu_settings": "Settings",
+        "menu_exit": "Exit",
+
+        "settings_title": "Settings",
+        "btn_back": "Back",
+
+        "btn_undo": "Undo",
+        "btn_redo": "Redo",
+        "btn_takeback": "Takeback",
+        "btn_resign": "Resign",
+        "btn_new_game": "New game",
+        "btn_settings_in_game": "Settings",
+
+        "mode_pvp": "Mode: PvP",
+        "mode_ai": "Mode: vs AI",
+        "turn_red": "Turn: RED",
+        "turn_black": "Turn: BLACK",
+
+        "check_on_red": "CHECK on RED",
+        "check_on_black": "CHECK on BLACK",
+        "red_wins": "RED wins",
+        "black_wins": "BLACK wins",
+        "game_over": "Game over",
+
+        "settings_board_theme": "Board: {name}",
+        "settings_piece_theme": "Pieces: {name}",
+        "settings_display": "Display: {mode}",
+        "display_window": "Window",
+        "display_fullscreen": "Fullscreen",
+    },
+    "vi": {
+        "title": "Cờ tướng",
+        "subtitle": "Nhấn Esc trong game để quay lại menu",
+        "menu_pvp": "Chơi 2 người (cùng máy)",
+        "menu_ai": "Chơi với máy",
+        "menu_settings": "Cài đặt",
+        "menu_exit": "Thoát",
+
+        "settings_title": "Cài đặt",
+        "btn_back": "Quay lại",
+
+        "btn_undo": "Đi lại",
+        "btn_redo": "Tiến tới",
+        "btn_takeback": "Xin đi lại",
+        "btn_resign": "Đầu hàng",
+        "btn_new_game": "Ván mới",
+        "btn_settings_in_game": "Cài đặt",
+
+        "mode_pvp": "Chế độ: 2 người",
+        "mode_ai": "Chế độ: Chơi với máy",
+        "turn_red": "Lượt: ĐỎ",
+        "turn_black": "Lượt: ĐEN",
+
+        "check_on_red": "Chiếu tướng ĐỎ",
+        "check_on_black": "Chiếu tướng ĐEN",
+        "red_wins": "ĐỎ thắng",
+        "black_wins": "ĐEN thắng",
+        "game_over": "Ván cờ kết thúc",
+
+        "settings_board_theme": "Bàn cờ: {name}",
+        "settings_piece_theme": "Quân cờ: {name}",
+        "settings_display": "Hiển thị: {mode}",
+        "display_window": "Cửa sổ",
+        "display_fullscreen": "Toàn màn hình",
+    },
+}
+
+
+def t(settings, key):
+    return TEXT[settings.language][key]
+
+# ---------- Themes ----------
+
+BOARD_THEMES = [
+    {
+        "key": "classic",
+        "name": {"en": "Classic", "vi": "Cổ điển"},
+        "bg_color": (230, 200, 150),
+        "line_color": (80, 40, 10),
+        "river_color": (220, 210, 170),
+    },
+    {
+        "key": "dark_wood",
+        "name": {"en": "Dark wood", "vi": "Gỗ tối"},
+        "bg_color": (80, 60, 50),
+        "line_color": (220, 200, 160),
+        "river_color": (100, 80, 60),
+    },
+    {
+        "key": "green_board",
+        "name": {"en": "Green board", "vi": "Xanh cổ điển"},
+        "bg_color": (200, 220, 200),
+        "line_color": (40, 80, 40),
+        "river_color": (180, 210, 190),
+    },
+]
+
+PIECE_THEMES = [
+    {
+        "key": "red_black",
+        "name": {"en": "Red vs Black", "vi": "Đỏ vs Đen"},
+        "red_color": (220, 50, 50),
+        "black_color": (30, 30, 30),
+    },
+    {
+        "key": "blue_gold",
+        "name": {"en": "Blue vs Gold", "vi": "Xanh vs Vàng"},
+        "red_color": (40, 120, 220),
+        "black_color": (200, 160, 40),
+    },
+    {
+        "key": "crimson_gray",
+        "name": {"en": "Crimson vs Gray", "vi": "Đỏ sậm vs Xám"},
+        "red_color": (200, 40, 80),
+        "black_color": (60, 60, 70),
+    },
+]
+
+class Settings:
+    def __init__(self):
+        self.board_theme_index = 0
+        self.piece_theme_index = 0
+        self.display_mode = "window"  # "window" or "fullscreen"
+        self.language = "vi"          # "vi" or "en"
 
 # Sides
 AI_SIDE = Side.BLACK
@@ -34,7 +159,7 @@ AI_LEVELS = [
 ]
 
 class Button:
-    def __init__(self, rect, label):
+    def __init__(self, rect, label=""):
         self.rect = rect
         self.label = label
 
@@ -66,20 +191,25 @@ def screen_to_board(x, y):
     return None, None
 
 
-def draw_board(surface):
-    surface.fill(BG_COLOR)
+def draw_board(surface, settings: Settings):
+    theme = BOARD_THEMES[settings.board_theme_index]
+    bg_color = theme["bg_color"]
+    line_color = theme["line_color"]
+    river_color = theme["river_color"]
+
+    surface.fill(bg_color)
 
     for c in range(BOARD_COLS):
         x = MARGIN_X + c * CELL_SIZE
         y1 = MARGIN_Y
         y2 = MARGIN_Y + (BOARD_ROWS - 1) * CELL_SIZE
-        pygame.draw.line(surface, BOARD_LINE_COLOR, (x, y1), (x, y2), 2)
+        pygame.draw.line(surface, line_color, (x, y1), (x, y2), 2)
 
     for r in range(BOARD_ROWS):
         y = MARGIN_Y + r * CELL_SIZE
         x1 = MARGIN_X
         x2 = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
-        pygame.draw.line(surface, BOARD_LINE_COLOR, (x1, y), (x2, y), 2)
+        pygame.draw.line(surface, line_color, (x1, y), (x2, y), 2)
 
     river_y_top = MARGIN_Y + 4 * CELL_SIZE
     river_rect = pygame.Rect(
@@ -88,15 +218,16 @@ def draw_board(surface):
         (BOARD_COLS - 1) * CELL_SIZE,
         CELL_SIZE,
     )
-    pygame.draw.rect(surface, (220, 210, 170), river_rect)
+    pygame.draw.rect(surface, river_color, river_rect)
 
-
-def draw_piece(surface, piece, col, row, font):
+def draw_piece(surface, piece, col, row, font, settings: Settings):
     x, y = board_to_screen(col, row)
     cx = x
     cy = y
     radius = CELL_SIZE // 2 - 4
-    color = RED_COLOR if piece.side == Side.RED else BLACK_COLOR
+    theme = PIECE_THEMES[settings.piece_theme_index]
+    color = theme["red_color"] if piece.side == Side.RED else theme["black_color"]
+
     pygame.draw.circle(surface, (245, 230, 200), (cx, cy), radius)
     pygame.draw.circle(surface, color, (cx, cy), radius, 2)
 
@@ -272,6 +403,8 @@ def run_game():
     font_title = pygame.font.SysFont("SimHei", 40, bold=True)
     font_avatar = pygame.font.SysFont("Consolas", 16, bold=True)
 
+    settings = Settings()
+
     board = Board()
     current_side = Side.RED
     selected = None
@@ -285,53 +418,39 @@ def run_game():
     state = "menu"
     mode = None
     ai_level_index = 1
+    settings_return_state = "menu"
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
 
-    # Game buttons
-    btn_takeback = Button(
-        pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 190, 30),
-        "Takeback",
-    )
+# Buttons trong game
+    btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 200, 190, 30))
+    btn_takeback = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 190, 30))
+    btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 90, 30))
+    btn_new_game = Button(pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 80, 90, 30))
+    btn_ai_level = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 95, 160, 28))
 
-    btn_resign = Button(
-        pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 90, 30),
-        "Resign",
-    )
-    btn_new_game = Button(
-        pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 120, 90, 30),
-        "New game",
-    )
-    btn_ai_level = Button(
-        pygame.Rect(panel_x + 30, MARGIN_Y + 70, 160, 28),
-        "AI: Soldier Bot",
-    )
-
-    # Main menu
+    # Buttons menu
     center_x = WINDOW_WIDTH // 2
     start_y = WINDOW_HEIGHT // 2 - 80
-    btn_menu_pvp = Button(
-        pygame.Rect(center_x - 100, start_y, 200, 40),
-        "Play PvP (local)",
-    )
-    btn_menu_ai = Button(
-        pygame.Rect(center_x - 100, start_y + 50, 200, 40),
-        "Play vs AI",
-    )
-    btn_menu_settings = Button(
-        pygame.Rect(center_x - 100, start_y + 100, 200, 40),
-        "Settings",
-    )
-    btn_menu_exit = Button(
-        pygame.Rect(center_x - 100, start_y + 150, 200, 40),
-        "Exit",
-    )
+    btn_menu_pvp = Button(pygame.Rect(center_x - 100, start_y, 200, 40))
+    btn_menu_ai = Button(pygame.Rect(center_x - 100, start_y + 50, 200, 40))
+    btn_menu_settings = Button(pygame.Rect(center_x - 100, start_y + 100, 200, 40))
+    btn_menu_exit = Button(pygame.Rect(center_x - 100, start_y + 150, 200, 40))
 
-    # Settings button 
-    btn_settings_back = Button(
-        pygame.Rect(center_x - 60, WINDOW_HEIGHT - 100, 120, 35),
-        "Back",
-    )
+    # Buttons settings
+    settings_center_x = WINDOW_WIDTH // 2
+    btn_settings_board_theme = Button(pygame.Rect(settings_center_x - 160, 220, 320, 36))
+    btn_settings_piece_theme = Button(pygame.Rect(settings_center_x - 160, 270, 320, 36))
+    btn_settings_display = Button(pygame.Rect(settings_center_x - 160, 320, 320, 36))
+    btn_settings_language = Button(pygame.Rect(settings_center_x - 160, 370, 320, 36))
+    btn_settings_back = Button(pygame.Rect(settings_center_x - 80, WINDOW_HEIGHT - 100, 160, 40))
+
+    def apply_display_mode():
+        nonlocal screen
+        if settings.display_mode == "fullscreen":
+            screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN)
+        else:
+            screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
 
 
     def reset_game():
@@ -410,12 +529,17 @@ def run_game():
                 running = False
 
             elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE and state != "menu":
-                    # Return to main menu ESC
-                    switch_to_menu()
+                if event.key == pygame.K_ESCAPE:
+                    if state == "settings":
+                        state = settings_return_state
+                    elif state != "menu":
+                        switch_to_menu()
 
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 mx, my = event.pos
+
+                lang = settings.language
+                lang_text = TEXT[lang]
 
                 # --------- STATE: MENU ----------
                 if state == "menu":
@@ -430,24 +554,44 @@ def run_game():
                         state = "ai"
                         continue
                     if btn_menu_settings.is_clicked((mx, my)):
+                        settings_return_state = "menu"
                         state = "settings"
                         continue
                     if btn_menu_exit.is_clicked((mx, my)):
                         running = False
                         continue
 
-                # --------- STATE: SETTINGS ----------
+                # -------- SETTINGS --------
                 elif state == "settings":
+                    if btn_settings_board_theme.is_clicked((mx, my)):
+                        settings.board_theme_index = (settings.board_theme_index + 1) % len(BOARD_THEMES)
+                        continue
+                    if btn_settings_piece_theme.is_clicked((mx, my)):
+                        settings.piece_theme_index = (settings.piece_theme_index + 1) % len(PIECE_THEMES)
+                        continue
+                    if btn_settings_display.is_clicked((mx, my)):
+                        settings.display_mode = "fullscreen" if settings.display_mode == "window" else "window"
+                        apply_display_mode()
+                        continue
+                    if btn_settings_language.is_clicked((mx, my)):
+                        settings.language = "en" if settings.language == "vi" else "vi"
+                        continue
                     if btn_settings_back.is_clicked((mx, my)):
-                        switch_to_menu()
+                        state = settings_return_state
                         continue
 
                 # --------- STATE: GAME (PVP / AI) ----------
                 elif state in ("pvp", "ai"):
+                    # in-game settings
+                    if btn_in_game_settings.is_clicked((mx, my)):
+                        settings_return_state = state
+                        state = "settings"
+                        continue
+
                     if state == "ai" and btn_ai_level.is_clicked((mx, my)):
                         ai_level_index = (ai_level_index + 1) % len(AI_LEVELS)
                         continue
-                    
+
                     if btn_takeback.is_clicked((mx, my)):
                         if move_history:
                             steps = min(2, len(move_history))
@@ -535,20 +679,28 @@ def run_game():
                                         update_game_state_after_side_change()
                                     selected = None
                                     valid_moves = []
+
         if state == "ai" and not game_over and current_side == AI_SIDE:
             ai_make_move()
 
         # ================== DRAW ==================
+        lang = settings.language
+        lang_text = TEXT[lang]
+
         if state == "menu":
             screen.fill((40, 40, 60))
-            title_surf = font_title.render("Xiangqi", True, (250, 250, 250))
+            title_surf = font_title.render(lang_text["title"], True, (250, 250, 250))
             title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 140))
             screen.blit(title_surf, title_rect)
 
-            subtitle = "Press Esc in game to return here"
-            sub_surf = font_text.render(subtitle, True, (220, 220, 220))
+            sub_surf = font_text.render(lang_text["subtitle"], True, (220, 220, 220))
             sub_rect = sub_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 110))
             screen.blit(sub_surf, sub_rect)
+
+            btn_menu_pvp.label = lang_text["menu_pvp"]
+            btn_menu_ai.label = lang_text["menu_ai"]
+            btn_menu_settings.label = lang_text["menu_settings"]
+            btn_menu_exit.label = lang_text["menu_exit"]
 
             btn_menu_pvp.draw(screen, font_button, enabled=True)
             btn_menu_ai.draw(screen, font_button, enabled=True)
@@ -556,7 +708,7 @@ def run_game():
             btn_menu_exit.draw(screen, font_button, enabled=True)
 
         elif state in ("pvp", "ai"):
-            draw_board(screen)
+            draw_board(screen, settings)
 
             if selected is not None:
                 draw_selection(screen, *selected)
@@ -566,38 +718,41 @@ def run_game():
                 for c in range(BOARD_COLS):
                     piece = board.get_piece(c, r)
                     if piece is not None:
-                        draw_piece(screen, piece, c, r, font_piece)
+                        draw_piece(screen, piece, c, r, font_piece, settings)
 
             # Panel
-            panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
-            mode_text = "Mode: PvP" if mode == "pvp" else "Mode: vs AI (placeholder)"
+            mode_text = lang_text["mode_pvp"] if mode == "pvp" else lang_text["mode_ai"]
             mt_surf = font_text.render(mode_text, True, (0, 0, 0))
             screen.blit(mt_surf, (panel_x, MARGIN_Y))
 
-            turn_text = f"Turn: {'RED' if current_side == Side.RED else 'BLACK'}"
+            turn_text = lang_text["turn_red"] if current_side == Side.RED else lang_text["turn_black"]
             tt_surf = font_text.render(turn_text, True, (0, 0, 0))
             screen.blit(tt_surf, (panel_x, MARGIN_Y + 20))
 
+            y_info = MARGIN_Y + 45
             if in_check_side is not None and not game_over:
-                msg = "CHECK on RED" if in_check_side == Side.RED else "CHECK on BLACK"
+                msg = lang_text["check_on_red"] if in_check_side == Side.RED else lang_text["check_on_black"]
                 ck_surf = font_text.render(msg, True, (200, 0, 0))
-                screen.blit(ck_surf, (panel_x, MARGIN_Y + 45))
+                screen.blit(ck_surf, (panel_x, y_info))
+                y_info += 25
 
             if game_over and winner is not None:
                 if winner == Side.RED:
-                    msg = "RED wins"
+                    msg = lang_text["red_wins"]
                 elif winner == Side.BLACK:
-                    msg = "BLACK wins"
+                    msg = lang_text["black_wins"]
                 else:
-                    msg = "Game over"
+                    msg = lang_text["game_over"]
                 win_surf = font_text.render(msg, True, (0, 0, 200))
-                screen.blit(win_surf, (panel_x, MARGIN_Y + 70))
-            # nếu đang ở chế độ AI, hiển thị avatar + nút level
+                screen.blit(win_surf, (panel_x, y_info))
+                y_info += 25
+
+                
+            # If in PvE mode
             if state == "ai":
                 level_cfg = AI_LEVELS[ai_level_index]
                 btn_ai_level.label = f"AI: {level_cfg['name']}"
 
-                # avatar tròn màu ở bên trái nút
                 avatar_center = (panel_x + 16, MARGIN_Y + 109)
                 pygame.draw.circle(screen, level_cfg["color"], avatar_center, 12)
                 pygame.draw.circle(screen, (0, 0, 0), avatar_center, 12, 2)
@@ -620,31 +775,49 @@ def run_game():
                 y_log += 20
 
             # Draw buttons
+            btn_in_game_settings.label = lang_text["btn_settings_in_game"]
+            btn_takeback.label = lang_text["btn_takeback"]
+            btn_resign.label = lang_text["btn_resign"]
+            btn_new_game.label = lang_text["btn_new_game"]
+
+            btn_in_game_settings.draw(screen, font_button, enabled=True)
             btn_takeback.draw(screen, font_button, enabled=bool(move_history))
             btn_resign.draw(screen, font_button, enabled=not game_over)
             btn_new_game.draw(screen, font_button, enabled=True)
 
         elif state == "settings":
             screen.fill((50, 40, 40))
-            title_surf = font_title.render("Settings", True, (240, 240, 240))
+            title_surf = font_title.render(t(settings, "settings_title"), True, (240, 240, 240))
             title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, 120))
             screen.blit(title_surf, title_rect)
 
-            lines = [
-                "Settings placeholder",
-                "- Avatar, player name",
-                "- Light/Dark mode",
-                "- Sound, animation",
-                "",
-                "Press Esc or Back to return to menu",
-            ]
-            y = 180
-            for line in lines:
-                line_surf = font_text.render(line, True, (230, 230, 230))
-                line_rect = line_surf.get_rect(center=(WINDOW_WIDTH // 2, y))
-                screen.blit(line_surf, line_rect)
-                y += 30
+            board_theme = BOARD_THEMES[settings.board_theme_index]
+            board_name = board_theme["name"][settings.language]
+            piece_theme = PIECE_THEMES[settings.piece_theme_index]
+            piece_name = piece_theme["name"][settings.language]
 
+            board_label = t(settings, "settings_board_theme").format(name=board_name)
+            piece_label = t(settings, "settings_piece_theme").format(name=piece_name)
+
+            mode_label_key = "display_window" if settings.display_mode == "window" else "display_fullscreen"
+            mode_label_text = t(settings, mode_label_key)
+            display_label = t(settings, "settings_display").format(mode=mode_label_text)
+
+            if settings.language == "en":
+                lang_label = "Language: English"
+            else:
+                lang_label = "Ngôn ngữ: Tiếng Việt"
+
+            btn_settings_board_theme.label = board_label
+            btn_settings_piece_theme.label = piece_label
+            btn_settings_display.label = display_label
+            btn_settings_language.label = lang_label
+            btn_settings_back.label = t(settings, "btn_back")
+
+            btn_settings_board_theme.draw(screen, font_button, enabled=True)
+            btn_settings_piece_theme.draw(screen, font_button, enabled=True)
+            btn_settings_display.draw(screen, font_button, enabled=True)
+            btn_settings_language.draw(screen, font_button, enabled=True)
             btn_settings_back.draw(screen, font_button, enabled=True)
 
         pygame.display.flip()
