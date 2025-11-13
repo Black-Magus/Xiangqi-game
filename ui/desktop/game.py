@@ -1,4 +1,6 @@
 import pygame
+import math
+import random
 
 from config import (
     BOARD_COLS,
@@ -20,6 +22,16 @@ BOARD_LINE_COLOR = (80, 40, 10)
 SELECT_COLOR = (255, 215, 0)
 HINT_COLOR = (0, 150, 0)
 
+# Sides
+AI_SIDE = Side.BLACK
+HUMAN_SIDE = Side.RED
+
+# AI Levels
+AI_LEVELS = [
+    {"name": "Noob Bot", "avatar_char": "N", "color": (120, 170, 255), "depth": 1, "randomness": 0.9},
+    {"name": "Pro Bot", "avatar_char": "P", "color": (120, 220, 120), "depth": 1, "randomness": 0.2},
+    {"name": "Hacker Bot", "avatar_char": "H", "color": (220, 120, 120), "depth": 2, "randomness": 0.0},
+]
 
 class Button:
     def __init__(self, rect, label):
@@ -119,6 +131,134 @@ def draw_move_hints(surface, moves):
         x, y = board_to_screen(c, r)
         pygame.draw.circle(surface, HINT_COLOR, (x, y), 6)
 
+# ===========================
+# AI helper
+# ===========================
+
+PIECE_VALUES = {
+    PieceType.GENERAL: 10000,
+    PieceType.ROOK: 500,
+    PieceType.CANNON: 275,
+    PieceType.HORSE: 275,
+    PieceType.ELEPHANT: 125,
+    PieceType.ADVISOR: 125,
+    PieceType.SOLDIER: 60,
+}
+
+
+def evaluate_board(board: Board, ai_side: Side) -> int:
+    score = 0
+    for r in range(BOARD_ROWS):
+        for c in range(BOARD_COLS):
+            p = board.get_piece(c, r)
+            if p is None:
+                continue
+            val = PIECE_VALUES.get(p.ptype, 0)
+            if p.side == ai_side:
+                score += val
+            else:
+                score -= val
+    return score
+
+
+def generate_all_legal_moves(board: Board, side: Side):
+    moves = []
+    for r in range(BOARD_ROWS):
+        for c in range(BOARD_COLS):
+            p = board.get_piece(c, r)
+            if p is None or p.side != side:
+                continue
+            legal = board.generate_legal_moves(c, r, side)
+            for nc, nr in legal:
+                captured = board.get_piece(nc, nr)
+                mv = Move((c, r), (nc, nr), p, captured)
+                moves.append(mv)
+    return moves
+
+
+def minimax_search(board: Board, depth: int, ai_side: Side, current_side: Side, alpha: float, beta: float) -> float:
+    if depth == 0:
+        return evaluate_board(board, ai_side)
+
+    moves = generate_all_legal_moves(board, current_side)
+    if not moves:
+        if board.is_in_check(current_side):
+            return -100000 if current_side == ai_side else 100000
+        else:
+            return 0
+
+    if current_side == ai_side:
+        best = -math.inf
+        for mv in moves:
+            from_c, from_r = mv.from_pos
+            to_c, to_r = mv.to_pos
+            captured = board._apply_temp_move(from_c, from_r, to_c, to_r)
+            next_side = Side.RED if current_side == Side.BLACK else Side.BLACK
+            score = minimax_search(board, depth - 1, ai_side, next_side, alpha, beta)
+            board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
+
+            if score > best:
+                best = score
+            alpha = max(alpha, score)
+            if beta <= alpha:
+                break
+        return best
+    else:
+        best = math.inf
+        for mv in moves:
+            from_c, from_r = mv.from_pos
+            to_c, to_r = mv.to_pos
+            captured = board._apply_temp_move(from_c, from_r, to_c, to_r)
+            next_side = Side.RED if current_side == Side.BLACK else Side.BLACK
+            score = minimax_search(board, depth - 1, ai_side, next_side, alpha, beta)
+            board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
+
+            if score < best:
+                best = score
+            beta = min(beta, score)
+            if beta <= alpha:
+                break
+        return best
+
+
+def choose_ai_move(board: Board, level_cfg, side: Side):
+    moves = generate_all_legal_moves(board, side)
+    if not moves:
+        return None
+
+    depth = level_cfg["depth"]
+    randomness = level_cfg["randomness"]
+
+    if randomness > 0 and random.random() < randomness:
+        return random.choice(moves)
+
+    best_score = -math.inf
+    best_moves = []
+
+    for mv in moves:
+        from_c, from_r = mv.from_pos
+        to_c, to_r = mv.to_pos
+        captured = board._apply_temp_move(from_c, from_r, to_c, to_r)
+
+        if depth <= 1:
+            score = evaluate_board(board, side)
+        else:
+            next_side = Side.RED if side == Side.BLACK else Side.BLACK
+            score = minimax_search(board, depth - 1, side, next_side, -math.inf, math.inf)
+
+        board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
+
+        if score > best_score + 1e-6:
+            best_score = score
+            best_moves = [mv]
+        elif abs(score - best_score) <= 1e-6:
+            best_moves.append(mv)
+
+    return random.choice(best_moves) if best_moves else random.choice(moves)
+
+# ===========================
+# Main Application 
+# ===========================
 
 def run_game():
     pygame.init()
@@ -130,7 +270,7 @@ def run_game():
     font_text = pygame.font.SysFont("Consolas", 18)
     font_button = pygame.font.SysFont("Consolas", 16)
     font_title = pygame.font.SysFont("SimHei", 40, bold=True)
-
+    font_avatar = pygame.font.SysFont("Consolas", 16, bold=True)
 
     board = Board()
     current_side = Side.RED
@@ -144,8 +284,11 @@ def run_game():
 
     state = "menu"
     mode = None
+    ai_level_index = 1
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
+
+    # Game buttons
     btn_takeback = Button(
         pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 190, 30),
         "Takeback",
@@ -158,6 +301,10 @@ def run_game():
     btn_new_game = Button(
         pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 120, 90, 30),
         "New game",
+    )
+    btn_ai_level = Button(
+        pygame.Rect(panel_x + 30, MARGIN_Y + 70, 160, 28),
+        "AI: Soldier Bot",
     )
 
     # Main menu
@@ -224,6 +371,36 @@ def run_game():
         game_over = False
         winner = None
 
+    def ai_make_move():
+        nonlocal current_side, move_history, redo_stack, game_over, winner, in_check_side, selected, valid_moves
+        if game_over:
+            return
+        if current_side != AI_SIDE:
+            return
+
+        level_cfg = AI_LEVELS[ai_level_index]
+        mv = choose_ai_move(board, level_cfg, AI_SIDE)
+        if mv is None:
+            if board.is_in_check(AI_SIDE):
+                game_over = True
+                winner = HUMAN_SIDE
+            else:
+                game_over = True
+                winner = None
+            in_check_side = None
+            return
+
+        board.move_piece(mv)
+        move_history.append(mv)
+        redo_stack.clear()
+        selected = None
+        valid_moves = []
+
+        # Change turn to player
+        current_side = HUMAN_SIDE
+        update_game_state_after_side_change()
+
+
     running = True
     while running:
         dt = clock.tick(60) / 1000.0
@@ -251,7 +428,6 @@ def run_game():
                         reset_game()
                         mode = "ai"
                         state = "ai"
-                        # NOTICE: PLACEHOLDER (AI not implemented)
                         continue
                     if btn_menu_settings.is_clicked((mx, my)):
                         state = "settings"
@@ -268,6 +444,10 @@ def run_game():
 
                 # --------- STATE: GAME (PVP / AI) ----------
                 elif state in ("pvp", "ai"):
+                    if state == "ai" and btn_ai_level.is_clicked((mx, my)):
+                        ai_level_index = (ai_level_index + 1) % len(AI_LEVELS)
+                        continue
+                    
                     if btn_takeback.is_clicked((mx, my)):
                         if move_history:
                             steps = min(2, len(move_history))
@@ -301,6 +481,8 @@ def run_game():
                         continue
 
                     if game_over:
+                        continue
+                    if state == "ai" and current_side == AI_SIDE:
                         continue
 
                     # Handle click on the board
@@ -353,6 +535,8 @@ def run_game():
                                         update_game_state_after_side_change()
                                     selected = None
                                     valid_moves = []
+        if state == "ai" and not game_over and current_side == AI_SIDE:
+            ai_make_move()
 
         # ================== DRAW ==================
         if state == "menu":
@@ -408,7 +592,25 @@ def run_game():
                     msg = "Game over"
                 win_surf = font_text.render(msg, True, (0, 0, 200))
                 screen.blit(win_surf, (panel_x, MARGIN_Y + 70))
+            # nếu đang ở chế độ AI, hiển thị avatar + nút level
+            if state == "ai":
+                level_cfg = AI_LEVELS[ai_level_index]
+                btn_ai_level.label = f"AI: {level_cfg['name']}"
 
+                # avatar tròn màu ở bên trái nút
+                avatar_center = (panel_x + 16, MARGIN_Y + 109)
+                pygame.draw.circle(screen, level_cfg["color"], avatar_center, 12)
+                pygame.draw.circle(screen, (0, 0, 0), avatar_center, 12, 2)
+                avatar_text = font_avatar.render(level_cfg["avatar_char"], True, (0, 0, 0))
+                avatar_rect = avatar_text.get_rect(center=avatar_center)
+                screen.blit(avatar_text, avatar_rect)
+
+                btn_ai_level.draw(screen, font_button, enabled=True)
+
+                y_log_start = MARGIN_Y + 140
+            else:
+                y_log_start = MARGIN_Y + 110
+                
             # log moves
             y_log = MARGIN_Y + 110
             for i, mv in enumerate(move_history[-10:]):
