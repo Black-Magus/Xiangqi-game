@@ -1,6 +1,8 @@
 import pygame
 import math
 import random
+import json
+import os
 
 from config import (
     BOARD_COLS,
@@ -147,6 +149,46 @@ class Settings:
         self.display_mode = "window"  # "window" or "fullscreen"
         self.language = "vi"          # "vi" or "en"
 
+SETTINGS_FILE = "settings.json"
+
+def settings_to_dict(settings: Settings):
+    return {
+        "board_theme_index": settings.board_theme_index,
+        "piece_theme_index": settings.piece_theme_index,
+        "display_mode": settings.display_mode,
+        "language": settings.language,
+    }
+
+def load_settings() -> Settings:
+    s = Settings()
+    if not os.path.exists(SETTINGS_FILE):
+        return s
+
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return s
+
+    if isinstance(data, dict):
+        if "board_theme_index" in data:
+            s.board_theme_index = int(data["board_theme_index"]) % len(BOARD_THEMES)
+        if "piece_theme_index" in data:
+            s.piece_theme_index = int(data["piece_theme_index"]) % len(PIECE_THEMES)
+        if data.get("display_mode") in ("window", "fullscreen"):
+            s.display_mode = data["display_mode"]
+        if data.get("language") in ("vi", "en"):
+            s.language = data["language"]
+    return s
+
+def save_settings(settings: Settings):
+    data = settings_to_dict(settings)
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
 # Sides
 AI_SIDE = Side.BLACK
 HUMAN_SIDE = Side.RED
@@ -254,13 +296,13 @@ def draw_piece(surface, piece, col, row, font, settings: Settings):
 def draw_selection(surface, col, row):
     x, y = board_to_screen(col, row)
     radius = CELL_SIZE // 2 - 2
-    pygame.draw.circle(surface, SELECT_COLOR, (x, y), radius, 3)
+    pygame.draw.circle(surface, (255, 215, 0), (x, y), radius, 3)
 
 
 def draw_move_hints(surface, moves):
     for c, r in moves:
         x, y = board_to_screen(c, r)
-        pygame.draw.circle(surface, HINT_COLOR, (x, y), 6)
+        pygame.draw.circle(surface, (0, 150, 0), (x, y), 6)
 
 # ===========================
 # AI helper
@@ -393,7 +435,9 @@ def choose_ai_move(board: Board, level_cfg, side: Side):
 
 def run_game():
     pygame.init()
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    settings = load_settings()
+    flags = pygame.FULLSCREEN if settings.display_mode == "fullscreen" else 0
+    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), flags)
     pygame.display.set_caption("Xiangqi - Cờ Tướng")
 
     clock = pygame.time.Clock()
@@ -403,7 +447,7 @@ def run_game():
     font_title = pygame.font.SysFont("SimHei", 40, bold=True)
     font_avatar = pygame.font.SysFont("Consolas", 16, bold=True)
 
-    settings = Settings()
+    settings = load_settings()
 
     board = Board()
     current_side = Side.RED
@@ -565,19 +609,24 @@ def run_game():
                 elif state == "settings":
                     if btn_settings_board_theme.is_clicked((mx, my)):
                         settings.board_theme_index = (settings.board_theme_index + 1) % len(BOARD_THEMES)
+                        save_settings(settings)
                         continue
                     if btn_settings_piece_theme.is_clicked((mx, my)):
                         settings.piece_theme_index = (settings.piece_theme_index + 1) % len(PIECE_THEMES)
+                        save_settings(settings)
                         continue
                     if btn_settings_display.is_clicked((mx, my)):
                         settings.display_mode = "fullscreen" if settings.display_mode == "window" else "window"
                         apply_display_mode()
+                        save_settings(settings)
                         continue
                     if btn_settings_language.is_clicked((mx, my)):
                         settings.language = "en" if settings.language == "vi" else "vi"
+                        save_settings(settings)
                         continue
                     if btn_settings_back.is_clicked((mx, my)):
                         state = settings_return_state
+                        save_settings(settings)
                         continue
 
                 # --------- STATE: GAME (PVP / AI) ----------
@@ -822,4 +871,5 @@ def run_game():
 
         pygame.display.flip()
 
+    save_settings(settings)
     pygame.quit()
