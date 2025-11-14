@@ -53,6 +53,22 @@ TEXT = {
         "settings_display": "Display: {mode}",
         "display_window": "Window",
         "display_fullscreen": "Fullscreen",
+
+        "settings_player_stats": "Player stats",
+        "stats_title": "Player stats",
+        "stats_overall": "Overall",
+        "stats_vs_ai": "vs AI",
+        "stats_vs_human": "vs human",
+        "stats_games": "Games",
+        "stats_wins": "Wins",
+        "stats_losses": "Losses",
+        "stats_draws": "Draws",
+        "stats_winrate": "Winrate",
+
+        "label_red_player": "RED: {name}",
+        "label_black_player": "BLACK: {name}",
+        "label_ai_player": "AI: {name}",
+
     },
     "vi": {
         "title": "Cờ tướng",
@@ -88,6 +104,20 @@ TEXT = {
         "settings_display": "Hiển thị: {mode}",
         "display_window": "Cửa sổ",
         "display_fullscreen": "Toàn màn hình",
+        "settings_player_stats": "Thống kê người chơi",
+        "stats_title": "Thống kê người chơi",
+        "stats_overall": "Tổng",
+        "stats_vs_ai": "Vs máy",
+        "stats_vs_human": "Vs người",
+        "stats_games": "Số ván",
+        "stats_wins": "Thắng",
+        "stats_losses": "Thua",
+        "stats_draws": "Hòa",
+        "stats_winrate": "Tỉ lệ thắng",
+
+        "label_red_player": "ĐỎ: {name}",
+        "label_black_player": "ĐEN: {name}",
+        "label_ai_player": "AI: {name}",
     },
 }
 
@@ -188,6 +218,146 @@ def save_settings(settings: Settings):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
+# ---------- Profiles (profiles.json) ----------
+
+PROFILES_FILE = "profiles.json"
+
+
+def default_profiles_data():
+    return {
+        "version": 1,
+        "players": [
+            {
+                "id": "p1",
+                "display_name": "Player 1",
+                "avatar": {
+                    "type": "color",
+                    "color": [220, 50, 50],
+                    "symbol": "P1",
+                },
+                "stats": {
+                    "overall": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
+                    "vs_ai": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
+                    "vs_human": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
+                },
+            },
+            {
+                "id": "p2",
+                "display_name": "Player 2",
+                "avatar": {
+                    "type": "color",
+                    "color": [40, 120, 220],
+                    "symbol": "P2",
+                },
+                "stats": {
+                    "overall": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
+                    "vs_ai": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
+                    "vs_human": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
+                },
+            },
+        ],
+        "last_selected": {
+            "pvp": {
+                "red_player_id": "p1",
+                "black_player_id": "p2",
+            },
+            "ai": {
+                "human_player_id": "p1",
+            },
+        },
+    }
+
+
+def load_profiles():
+    if not os.path.exists(PROFILES_FILE):
+        data = default_profiles_data()
+        save_profiles(data)
+        return data
+    try:
+        with open(PROFILES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        data = default_profiles_data()
+        save_profiles(data)
+    return data
+
+
+def save_profiles(data):
+    try:
+        with open(PROFILES_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def find_player(data, player_id):
+    for p in data.get("players", []):
+        if p.get("id") == player_id:
+            return p
+    return None
+
+
+def update_stats_for_player(player, result, is_vs_ai):
+    stats = player["stats"]
+
+    stats["overall"]["games"] += 1
+    if result == "win":
+        stats["overall"]["wins"] += 1
+    elif result == "loss":
+        stats["overall"]["losses"] += 1
+    elif result == "draw":
+        stats["overall"]["draws"] += 1
+
+    key = "vs_ai" if is_vs_ai else "vs_human"
+    stats[key]["games"] += 1
+    if result == "win":
+        stats[key]["wins"] += 1
+    elif result == "loss":
+        stats[key]["losses"] += 1
+    elif result == "draw":
+        stats[key]["draws"] += 1
+
+def apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw):
+    if mode not in ("pvp", "ai"):
+        return
+
+    if mode == "pvp":
+        pvp_info = profiles_data.get("last_selected", {}).get("pvp", {})
+        red_id = pvp_info.get("red_player_id", "p1")
+        black_id = pvp_info.get("black_player_id", "p2")
+        red_player = find_player(profiles_data, red_id)
+        black_player = find_player(profiles_data, black_id)
+        if red_player is None or black_player is None:
+            return
+
+        if is_draw or winner_side is None:
+            update_stats_for_player(red_player, "draw", is_vs_ai=False)
+            update_stats_for_player(black_player, "draw", is_vs_ai=False)
+        else:
+            if winner_side == Side.RED:
+                update_stats_for_player(red_player, "win", is_vs_ai=False)
+                update_stats_for_player(black_player, "loss", is_vs_ai=False)
+            else:
+                update_stats_for_player(red_player, "loss", is_vs_ai=False)
+                update_stats_for_player(black_player, "win", is_vs_ai=False)
+
+    elif mode == "ai":
+        ai_info = profiles_data.get("last_selected", {}).get("ai", {})
+        human_id = ai_info.get("human_player_id", "p1")
+        human_player = find_player(profiles_data, human_id)
+        if human_player is None:
+            return
+
+        if is_draw or winner_side is None:
+            update_stats_for_player(human_player, "draw", is_vs_ai=True)
+        else:
+            if winner_side == HUMAN_SIDE:
+                update_stats_for_player(human_player, "win", is_vs_ai=True)
+            else:
+                update_stats_for_player(human_player, "loss", is_vs_ai=True)
+
+    save_profiles(profiles_data)
 
 # Sides
 AI_SIDE = Side.BLACK
@@ -303,6 +473,27 @@ def draw_move_hints(surface, moves):
     for c, r in moves:
         x, y = board_to_screen(c, r)
         pygame.draw.circle(surface, (0, 150, 0), (x, y), 6)
+        
+def draw_profile_avatar(surface, profile, center, font_avatar):
+    avatar = profile.get("avatar", {})
+    color = avatar.get("color", [150, 150, 150])
+    symbol = avatar.get("symbol", "?")
+    pygame.draw.circle(surface, tuple(color), center, 12)
+    pygame.draw.circle(surface, (0, 0, 0), center, 12, 2)
+    text = font_avatar.render(str(symbol), True, (0, 0, 0))
+    rect = text.get_rect(center=center)
+    surface.blit(text, rect)
+
+
+def draw_ai_avatar(surface, ai_level_cfg, center, font_avatar):
+    color = ai_level_cfg["color"]
+    symbol = ai_level_cfg["avatar_char"]
+    pygame.draw.circle(surface, color, center, 12)
+    pygame.draw.circle(surface, (0, 0, 0), center, 12, 2)
+    text = font_avatar.render(str(symbol), True, (0, 0, 0))
+    rect = text.get_rect(center=center)
+    surface.blit(text, rect)
+
 
 # ===========================
 # AI helper
@@ -435,7 +626,11 @@ def choose_ai_move(board: Board, level_cfg, side: Side):
 
 def run_game():
     pygame.init()
+
+    # Load settings and profiles
     settings = load_settings()
+    profiles_data = load_profiles()
+
     flags = pygame.FULLSCREEN if settings.display_mode == "fullscreen" else 0
     screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), flags)
     pygame.display.set_caption("Xiangqi - Cờ Tướng")
@@ -458,11 +653,13 @@ def run_game():
     in_check_side = None
     game_over = False
     winner = None
+    result_recorded = False
 
     state = "menu"
     mode = None
     ai_level_index = 1
     settings_return_state = "menu"
+    settings_page = "main"  # "main" or "stats"
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
 
@@ -487,6 +684,7 @@ def run_game():
     btn_settings_piece_theme = Button(pygame.Rect(settings_center_x - 160, 270, 320, 36))
     btn_settings_display = Button(pygame.Rect(settings_center_x - 160, 320, 320, 36))
     btn_settings_language = Button(pygame.Rect(settings_center_x - 160, 370, 320, 36))
+    btn_settings_player_stats = Button(pygame.Rect(settings_center_x - 160, 420, 320, 36))
     btn_settings_back = Button(pygame.Rect(settings_center_x - 80, WINDOW_HEIGHT - 100, 160, 40))
 
     def apply_display_mode():
@@ -499,7 +697,7 @@ def run_game():
 
     def reset_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack
-        nonlocal in_check_side, game_over, winner
+        nonlocal in_check_side, game_over, winner, result_recorded
         board.reset()
         current_side = Side.RED
         selected = None
@@ -509,49 +707,62 @@ def run_game():
         in_check_side = None
         game_over = False
         winner = None
+        result_recorded = False
+
+    def register_result_if_needed(winner_side, is_draw=False):
+        nonlocal result_recorded
+        if result_recorded:
+            return
+        if mode not in ("pvp", "ai"):
+            return
+        apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw)
+        result_recorded = True
 
     def update_game_state_after_side_change():
-        nonlocal in_check_side, game_over, winner
+        nonlocal in_check_side, game_over, winner, result_recorded
         if board.is_in_check(current_side):
             in_check_side = current_side
             if not board.has_any_legal_move(current_side):
-                game_over = True
-                winner = Side.RED if current_side == Side.BLACK else Side.BLACK
-            else:
-                game_over = False
-                winner = None
+                if not game_over:
+                    game_over = True
+                    winner_side = Side.RED if current_side == Side.BLACK else Side.BLACK
+                    winner = winner_side
+                    register_result_if_needed(winner_side, False)
         else:
             in_check_side = None
-            game_over = False
-            winner = None
+            if not result_recorded:
+                game_over = False
+                winner = None
 
     def switch_to_menu():
-        nonlocal state, selected, valid_moves, in_check_side, game_over, winner
+        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded
         state = "menu"
         selected = None
         valid_moves = []
         in_check_side = None
         game_over = False
         winner = None
+        result_recorded = False
 
     def ai_make_move():
-        nonlocal current_side, move_history, redo_stack, game_over, winner, in_check_side, selected, valid_moves
-        if game_over:
+        nonlocal current_side, move_history, redo_stack, game_over, winner
+        nonlocal in_check_side, selected, valid_moves
+        if game_over or current_side != AI_SIDE:
             return
-        if current_side != AI_SIDE:
-            return
-
         level_cfg = AI_LEVELS[ai_level_index]
         mv = choose_ai_move(board, level_cfg, AI_SIDE)
         if mv is None:
             if board.is_in_check(AI_SIDE):
                 game_over = True
                 winner = HUMAN_SIDE
+                register_result_if_needed(HUMAN_SIDE, False)
             else:
                 game_over = True
                 winner = None
+                register_result_if_needed(None, True)
             in_check_side = None
             return
+
 
         board.move_piece(mv)
         move_history.append(mv)
@@ -607,27 +818,36 @@ def run_game():
 
                 # -------- SETTINGS --------
                 elif state == "settings":
-                    if btn_settings_board_theme.is_clicked((mx, my)):
-                        settings.board_theme_index = (settings.board_theme_index + 1) % len(BOARD_THEMES)
-                        save_settings(settings)
-                        continue
-                    if btn_settings_piece_theme.is_clicked((mx, my)):
-                        settings.piece_theme_index = (settings.piece_theme_index + 1) % len(PIECE_THEMES)
-                        save_settings(settings)
-                        continue
-                    if btn_settings_display.is_clicked((mx, my)):
-                        settings.display_mode = "fullscreen" if settings.display_mode == "window" else "window"
-                        apply_display_mode()
-                        save_settings(settings)
-                        continue
-                    if btn_settings_language.is_clicked((mx, my)):
-                        settings.language = "en" if settings.language == "vi" else "vi"
-                        save_settings(settings)
-                        continue
-                    if btn_settings_back.is_clicked((mx, my)):
-                        state = settings_return_state
-                        save_settings(settings)
-                        continue
+                    if settings_page == "main":
+                        if btn_settings_board_theme.is_clicked((mx, my)):
+                            settings.board_theme_index = (settings.board_theme_index + 1) % len(BOARD_THEMES)
+                            save_settings(settings)
+                            continue
+                        if btn_settings_piece_theme.is_clicked((mx, my)):
+                            settings.piece_theme_index = (settings.piece_theme_index + 1) % len(PIECE_THEMES)
+                            save_settings(settings)
+                            continue
+                        if btn_settings_display.is_clicked((mx, my)):
+                            settings.display_mode = "fullscreen" if settings.display_mode == "window" else "window"
+                            apply_display_mode()
+                            save_settings(settings)
+                            continue
+                        if btn_settings_language.is_clicked((mx, my)):
+                            settings.language = "en" if settings.language == "vi" else "vi"
+                            save_settings(settings)
+                            continue
+                        if btn_settings_player_stats.is_clicked((mx, my)):
+                            settings_page = "stats"
+                            continue
+                        if btn_settings_back.is_clicked((mx, my)):
+                            state = settings_return_state
+                            settings_page = "main"
+                            continue
+                    else:  # settings_page == "stats"
+                        if btn_settings_back.is_clicked((mx, my)):
+                            settings_page = "main"
+                            continue
+
 
                 # --------- STATE: GAME (PVP / AI) ----------
                 elif state in ("pvp", "ai"):
@@ -659,14 +879,12 @@ def run_game():
                     if btn_resign.is_clicked((mx, my)):
                         if not game_over:
                             game_over = True
-                            winner = (
-                                Side.RED
-                                if current_side == Side.BLACK
-                                else Side.BLACK
-                            )
+                            winner_side = Side.RED if current_side == Side.BLACK else Side.BLACK
+                            winner = winner_side
                             in_check_side = None
                             selected = None
                             valid_moves = []
+                            register_result_if_needed(winner_side, False)
                         continue
 
                     if btn_new_game.is_clicked((mx, my)):
@@ -796,25 +1014,70 @@ def run_game():
                 screen.blit(win_surf, (panel_x, y_info))
                 y_info += 25
 
+            # Player info + avatar
+            last_sel = profiles_data.get("last_selected", {})
+            pvp_info = last_sel.get("pvp", {})
+            ai_info = last_sel.get("ai", {})
+
+            y_players = y_info + 10
+
                 
-            # If in PvE mode
+            if mode == "pvp":
+                red_id = pvp_info.get("red_player_id", "p1")
+                black_id = pvp_info.get("black_player_id", "p2")
+                red_player = find_player(profiles_data, red_id)
+                black_player = find_player(profiles_data, black_id)
+
+                if red_player:
+                    center = (panel_x + 12, y_players + 10)
+                    draw_profile_avatar(screen, red_player, center, font_avatar)
+                    label = t(settings, "label_red_player").format(name=red_player.get("display_name", "Player 1"))
+                    color = (200, 0, 0) if current_side == Side.RED else (0, 0, 0)
+                    txt = font_text.render(label, True, color)
+                    screen.blit(txt, (panel_x + 30, y_players))
+                    y_players += 24
+
+                if black_player:
+                    center = (panel_x + 12, y_players + 10)
+                    draw_profile_avatar(screen, black_player, center, font_avatar)
+                    label = t(settings, "label_black_player").format(name=black_player.get("display_name", "Player 2"))
+                    color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
+                    txt = font_text.render(label, True, color)
+                    screen.blit(txt, (panel_x + 30, y_players))
+                    y_players += 24
+
+            else:  # mode == "ai"
+                human_id = ai_info.get("human_player_id", "p1")
+                human_player = find_player(profiles_data, human_id)
+                if human_player:
+                    center = (panel_x + 12, y_players + 10)
+                    draw_profile_avatar(screen, human_player, center, font_avatar)
+                    label = t(settings, "label_red_player").format(
+                        name=human_player.get("display_name", "Player 1")
+                    )
+                    color = (200, 0, 0) if current_side == Side.RED else (0, 0, 0)
+                    txt = font_text.render(label, True, color)
+                    screen.blit(txt, (panel_x + 30, y_players))
+                    y_players += 24
+
+                ai_cfg = AI_LEVELS[ai_level_index]
+                center = (panel_x + 12, y_players + 10)
+                draw_ai_avatar(screen, ai_cfg, center, font_avatar)
+                label = t(settings, "label_ai_player").format(name=ai_cfg["name"])
+                color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
+                txt = font_text.render(label, True, color)
+                screen.blit(txt, (panel_x + 30, y_players))
+                y_players += 24
+
+            y_log_start = y_players + 10
+
+            # AI level button 
             if state == "ai":
                 level_cfg = AI_LEVELS[ai_level_index]
                 btn_ai_level.label = f"AI: {level_cfg['name']}"
-
-                avatar_center = (panel_x + 16, MARGIN_Y + 109)
-                pygame.draw.circle(screen, level_cfg["color"], avatar_center, 12)
-                pygame.draw.circle(screen, (0, 0, 0), avatar_center, 12, 2)
-                avatar_text = font_avatar.render(level_cfg["avatar_char"], True, (0, 0, 0))
-                avatar_rect = avatar_text.get_rect(center=avatar_center)
-                screen.blit(avatar_text, avatar_rect)
-
                 btn_ai_level.draw(screen, font_button, enabled=True)
+                y_log_start += 30
 
-                y_log_start = MARGIN_Y + 140
-            else:
-                y_log_start = MARGIN_Y + 110
-                
             # log moves
             y_log = MARGIN_Y + 110
             for i, mv in enumerate(move_history[-10:]):
@@ -836,40 +1099,100 @@ def run_game():
 
         elif state == "settings":
             screen.fill((50, 40, 40))
-            title_surf = font_title.render(t(settings, "settings_title"), True, (240, 240, 240))
-            title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, 120))
-            screen.blit(title_surf, title_rect)
 
-            board_theme = BOARD_THEMES[settings.board_theme_index]
-            board_name = board_theme["name"][settings.language]
-            piece_theme = PIECE_THEMES[settings.piece_theme_index]
-            piece_name = piece_theme["name"][settings.language]
+            if settings_page == "main":
+                title_surf = font_title.render(t(settings, "settings_title"), True, (240, 240, 240))
+                title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, 120))
+                screen.blit(title_surf, title_rect)
 
-            board_label = t(settings, "settings_board_theme").format(name=board_name)
-            piece_label = t(settings, "settings_piece_theme").format(name=piece_name)
+                board_theme = BOARD_THEMES[settings.board_theme_index]
+                board_name = board_theme["name"][settings.language]
+                piece_theme = PIECE_THEMES[settings.piece_theme_index]
+                piece_name = piece_theme["name"][settings.language]
 
-            mode_label_key = "display_window" if settings.display_mode == "window" else "display_fullscreen"
-            mode_label_text = t(settings, mode_label_key)
-            display_label = t(settings, "settings_display").format(mode=mode_label_text)
+                board_label = t(settings, "settings_board_theme").format(name=board_name)
+                piece_label = t(settings, "settings_piece_theme").format(name=piece_name)
 
-            if settings.language == "en":
-                lang_label = "Language: English"
+                mode_label_key = "display_window" if settings.display_mode == "window" else "display_fullscreen"
+                mode_label_text = t(settings, mode_label_key)
+                display_label = t(settings, "settings_display").format(mode=mode_label_text)
+
+                if settings.language == "en":
+                    lang_label = "Language: English"
+                else:
+                    lang_label = "Ngôn ngữ: Tiếng Việt"
+
+                btn_settings_board_theme.label = board_label
+                btn_settings_piece_theme.label = piece_label
+                btn_settings_display.label = display_label
+                btn_settings_language.label = lang_label
+                btn_settings_player_stats.label = t(settings, "settings_player_stats")
+                btn_settings_back.label = t(settings, "btn_back")
+
+                btn_settings_board_theme.draw(screen, font_button, enabled=True)
+                btn_settings_piece_theme.draw(screen, font_button, enabled=True)
+                btn_settings_display.draw(screen, font_button, enabled=True)
+                btn_settings_language.draw(screen, font_button, enabled=True)
+                btn_settings_player_stats.draw(screen, font_button, enabled=True)
+                btn_settings_back.draw(screen, font_button, enabled=True)
+
             else:
-                lang_label = "Ngôn ngữ: Tiếng Việt"
+                title_surf = font_title.render(t(settings, "stats_title"), True, (240, 240, 240))
+                title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, 120))
+                screen.blit(title_surf, title_rect)
 
-            btn_settings_board_theme.label = board_label
-            btn_settings_piece_theme.label = piece_label
-            btn_settings_display.label = display_label
-            btn_settings_language.label = lang_label
-            btn_settings_back.label = t(settings, "btn_back")
+                games_label = t(settings, "stats_games")
+                wins_label = t(settings, "stats_wins")
+                losses_label = t(settings, "stats_losses")
+                draws_label = t(settings, "stats_draws")
+                winrate_label = t(settings, "stats_winrate")
+                overall_label = t(settings, "stats_overall")
+                vs_ai_label = t(settings, "stats_vs_ai")
+                vs_human_label = t(settings, "stats_vs_human")
 
-            btn_settings_board_theme.draw(screen, font_button, enabled=True)
-            btn_settings_piece_theme.draw(screen, font_button, enabled=True)
-            btn_settings_display.draw(screen, font_button, enabled=True)
-            btn_settings_language.draw(screen, font_button, enabled=True)
-            btn_settings_back.draw(screen, font_button, enabled=True)
+                start_x = settings_center_x - 260
+                y = 180
+
+                for p in profiles_data.get("players", []):
+                    avatar_center = (start_x + 20, y + 15)
+                    draw_profile_avatar(screen, p, avatar_center, font_avatar)
+
+                    name = p.get("display_name", "Player")
+                    name_surf = font_text.render(name, True, (240, 240, 240))
+                    screen.blit(name_surf, (start_x + 40, y))
+
+                    stats = p.get("stats", {})
+                    ov = stats.get("overall", {"games": 0, "wins": 0, "losses": 0, "draws": 0})
+                    ai_stats = stats.get("vs_ai", {"games": 0, "wins": 0, "losses": 0, "draws": 0})
+                    hv = stats.get("vs_human", {"games": 0, "wins": 0, "losses": 0, "draws": 0})
+
+                    def fmt_block(label_txt, s):
+                        g = s.get("games", 0)
+                        w = s.get("wins", 0)
+                        l = s.get("losses", 0)
+                        d = s.get("draws", 0)
+                        wr = (w / g * 100) if g > 0 else 0.0
+                        line1 = f"{label_txt}: {games_label} {g}, {wins_label} {w}, {losses_label} {l}, {draws_label} {d}"
+                        line2 = f"{winrate_label}: {wr:.1f}%"
+                        return line1, line2
+
+                    ov_l1, ov_l2 = fmt_block(overall_label, ov)
+                    ai_l1, ai_l2 = fmt_block(vs_ai_label, ai_stats)
+                    hv_l1, hv_l2 = fmt_block(vs_human_label, hv)
+
+                    y_line = y + 24
+                    for line in [ov_l1, ov_l2, ai_l1, ai_l2, hv_l1, hv_l2]:
+                        ls = font_text.render(line, True, (220, 220, 220))
+                        screen.blit(ls, (start_x + 40, y_line))
+                        y_line += 18
+
+                    y = y_line + 10
+
+                btn_settings_back.label = t(settings, "btn_back")
+                btn_settings_back.draw(screen, font_button, enabled=True)
 
         pygame.display.flip()
 
     save_settings(settings)
+    save_profiles(profiles_data)
     pygame.quit()

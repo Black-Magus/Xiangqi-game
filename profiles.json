@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "players": [
+    {
+      "id": "p1",
+      "display_name": "Zhuge Liang",
+      "avatar": {
+        "type": "color",
+        "color": [
+          220,
+          50,
+          50
+        ],
+        "symbol": "C"
+      },
+      "stats": {
+        "overall": {
+          "games": 21,
+          "wins": 7,
+          "losses": 13,
+          "draws": 1
+        },
+        "vs_ai": {
+          "games": 18,
+          "wins": 6,
+          "losses": 12,
+          "draws": 0
+        },
+        "vs_human": {
+          "games": 3,
+          "wins": 1,
+          "losses": 1,
+          "draws": 1
+        }
+      }
+    },
+    {
+      "id": "p2",
+      "display_name": "Guest",
+      "avatar": {
+        "type": "color",
+        "color": [
+          40,
+          120,
+          220
+        ],
+        "symbol": "G"
+      },
+      "stats": {
+        "overall": {
+          "games": 4,
+          "wins": 1,
+          "losses": 3,
+          "draws": 0
+        },
+        "vs_ai": {
+          "games": 0,
+          "wins": 0,
+          "losses": 0,
+          "draws": 0
+        },
+        "vs_human": {
+          "games": 4,
+          "wins": 1,
+          "losses": 3,
+          "draws": 0
+        }
+      }
+    }
+  ],
+  "last_selected": {
+    "pvp": {
+      "red_player_id": "p1",
+      "black_player_id": "p2"
+    },
+    "ai": {
+      "human_player_id": "p1"
+    }
+  }
+}
