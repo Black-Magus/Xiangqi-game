@@ -1,0 +1,174 @@
+import pygame
+
+from config import BOARD_COLS, BOARD_ROWS, CELL_SIZE, MARGIN_X, MARGIN_Y
+from core.engine.types import Side, PieceType
+
+from data.themes import BOARD_THEMES, PIECE_THEMES
+from data.avatar_assets import AVATAR_BOARD_SIZE, load_avatar_image
+from core.profiles_manager import find_player
+from core.engine.ai_engine import AI_LEVELS
+
+
+def board_to_screen(col, row):
+    x = MARGIN_X + col * CELL_SIZE
+    y = MARGIN_Y + row * CELL_SIZE
+    return x, y
+
+
+def screen_to_board(x, y):
+    col = (x - MARGIN_X + CELL_SIZE // 2) // CELL_SIZE
+    row = (y - MARGIN_Y + CELL_SIZE // 2) // CELL_SIZE
+    if 0 <= col < BOARD_COLS and 0 <= row < BOARD_ROWS:
+        return int(col), int(row)
+    return None, None
+
+
+def draw_board(surface, settings):
+    theme = BOARD_THEMES[settings.board_theme_index]
+    bg_color = theme["bg_color"]
+    line_color = theme["line_color"]
+    river_color = theme["river_color"]
+
+    surface.fill(bg_color)
+
+    for c in range(BOARD_COLS):
+        x = MARGIN_X + c * CELL_SIZE
+        y1 = MARGIN_Y
+        y2 = MARGIN_Y + (BOARD_ROWS - 1) * CELL_SIZE
+        pygame.draw.line(surface, line_color, (x, y1), (x, y2), 2)
+
+    for r in range(BOARD_ROWS):
+        y = MARGIN_Y + r * CELL_SIZE
+        x1 = MARGIN_X
+        x2 = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
+        pygame.draw.line(surface, line_color, (x1, y), (x2, y), 2)
+
+    river_y_top = MARGIN_Y + 4 * CELL_SIZE
+    river_rect = pygame.Rect(
+        MARGIN_X,
+        river_y_top,
+        (BOARD_COLS - 1) * CELL_SIZE,
+        CELL_SIZE,
+    )
+    pygame.draw.rect(surface, river_color, river_rect)
+
+
+def draw_piece(surface, piece, col, row, font, settings):
+    x, y = board_to_screen(col, row)
+    cx = x
+    cy = y
+    radius = CELL_SIZE // 2 - 4
+    theme = PIECE_THEMES[settings.piece_theme_index]
+    color = theme["red_color"] if piece.side == Side.RED else theme["black_color"]
+
+    pygame.draw.circle(surface, (245, 230, 200), (cx, cy), radius)
+    pygame.draw.circle(surface, color, (cx, cy), radius, 2)
+
+    if piece.ptype == PieceType.GENERAL:
+        text = "帥" if piece.side == Side.RED else "將"
+    elif piece.ptype == PieceType.ADVISOR:
+        text = "仕" if piece.side == Side.RED else "士"
+    elif piece.ptype == PieceType.ELEPHANT:
+        text = "相" if piece.side == Side.RED else "象"
+    elif piece.ptype == PieceType.HORSE:
+        text = "傌" if piece.side == Side.RED else "馬"
+    elif piece.ptype == PieceType.ROOK:
+        text = "俥" if piece.side == Side.RED else "車"
+    elif piece.ptype == PieceType.CANNON:
+        text = "炮" if piece.side == Side.RED else "砲"
+    else:
+        text = "兵" if piece.side == Side.RED else "卒"
+
+    text_surf = font.render(text, True, color)
+    text_rect = text_surf.get_rect(center=(cx, cy))
+    surface.blit(text_surf, text_rect)
+
+
+def draw_selection(surface, col, row):
+    x, y = board_to_screen(col, row)
+    radius = CELL_SIZE // 2 - 2
+    pygame.draw.circle(surface, (255, 215, 0), (x, y), radius, 3)
+
+
+def draw_move_hints(surface, moves):
+    for c, r in moves:
+        x, y = board_to_screen(c, r)
+        pygame.draw.circle(surface, (0, 150, 0), (x, y), 6)
+
+
+def draw_profile_avatar(surface, profile, center, size, font_avatar):
+    avatar = profile.get("avatar", {})
+    path = avatar.get("path")
+    img = load_avatar_image(path, size)
+    rect = pygame.Rect(0, 0, size, size)
+    rect.center = center
+    if img is not None:
+        surface.blit(img, rect)
+    else:
+        color = tuple(avatar.get("color", [180, 180, 180]))
+        pygame.draw.rect(surface, color, rect)
+        pygame.draw.rect(surface, (0, 0, 0), rect, 2)
+        initials = avatar.get("symbol") or profile.get("display_name", "?")[:2]
+        text = font_avatar.render(str(initials), True, (0, 0, 0))
+        text_rect = text.get_rect(center=rect.center)
+        surface.blit(text, text_rect)
+
+
+def draw_ai_avatar(surface, ai_level_cfg, center, size, font_avatar):
+    path = ai_level_cfg.get("avatar_path")
+    img = load_avatar_image(path, size)
+    rect = pygame.Rect(0, 0, size, size)
+    rect.center = center
+    if img is not None:
+        surface.blit(img, rect)
+    else:
+        color = ai_level_cfg.get("color", (120, 120, 120))
+        pygame.draw.rect(surface, color, rect)
+        pygame.draw.rect(surface, (0, 0, 0), rect, 2)
+        symbol = ai_level_cfg.get("avatar_char", "?")
+        text = font_avatar.render(str(symbol), True, (0, 0, 0))
+        text_rect = text.get_rect(center=rect.center)
+        surface.blit(text, text_rect)
+
+
+def get_bottom_avatar_rect():
+    rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
+    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE // 2
+    cy = MARGIN_Y + (BOARD_ROWS - 1) * CELL_SIZE + CELL_SIZE // 2
+    rect.center = (cx, cy)
+    return rect
+
+
+def get_top_avatar_rect():
+    rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
+    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE // 2
+    cy = MARGIN_Y + CELL_SIZE // 2
+    rect.center = (cx, cy)
+    return rect
+
+
+def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, font_avatar):
+    last_sel = profiles_data.get("last_selected", {})
+    if mode == "pvp":
+        pvp_info = last_sel.get("pvp", {})
+        red_id = pvp_info.get("red_player_id", "p1")
+        black_id = pvp_info.get("black_player_id", "p2")
+        red_player = find_player(profiles_data, red_id)
+        black_player = find_player(profiles_data, black_id)
+
+        bottom_rect = get_bottom_avatar_rect()
+        top_rect = get_top_avatar_rect()
+        if red_player:
+            draw_profile_avatar(surface, red_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+        if black_player:
+            draw_profile_avatar(surface, black_player, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+    elif mode == "ai":
+        ai_info = last_sel.get("ai", {})
+        human_id = ai_info.get("human_player_id", "p1")
+        human_player = find_player(profiles_data, human_id)
+        bottom_rect = get_bottom_avatar_rect()
+        top_rect = get_top_avatar_rect()
+        if human_player:
+            draw_profile_avatar(surface, human_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+        ai_cfg = AI_LEVELS[ai_level_index]
+        draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)

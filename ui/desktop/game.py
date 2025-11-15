@@ -1,8 +1,4 @@
 import pygame
-import math
-import random
-import json
-import os
 
 from config import (
     BOARD_COLS,
@@ -13,763 +9,34 @@ from config import (
     WINDOW_WIDTH,
     WINDOW_HEIGHT,
 )
-from engine.board import Board
-from engine.types import Side, PieceType, Move
+from core.engine.board import Board
+from core.engine.types import Side, Move
+
+from data.localisation import TEXT, t
+from data.themes import BOARD_THEMES, PIECE_THEMES
+from core.settings_manager import Settings, load_settings, save_settings
+from data.avatar_assets import BUILTIN_AVATARS
+from core.profiles_manager import load_profiles, save_profiles, find_player, apply_game_result_to_profiles
+from core.engine.constants import AI_SIDE, HUMAN_SIDE
+from core.engine.ai_engine import AI_LEVELS, choose_ai_move
+from core.ui_components import Button
+from core.engine.draw_helpers import (
+    draw_board,
+    draw_selection,
+    draw_move_hints,
+    draw_side_avatars_on_board,
+    draw_profile_avatar,
+    draw_ai_avatar,
+    get_bottom_avatar_rect,
+    get_top_avatar_rect,
+    screen_to_board,
+)
+from data.avatar_assets import select_avatar_file_dialog
 
-# ---------- Localization ----------
-
-TEXT = {
-    "en": {
-        "title": "Xiangqi",
-        "subtitle": "Press Esc in game to return to menu",
-        "menu_pvp": "Play PvP (local)",
-        "menu_ai": "Play vs AI",
-        "menu_settings": "Settings",
-        "menu_exit": "Exit",
-
-        "settings_title": "Settings",
-        "btn_back": "Back",
-
-        "btn_undo": "Undo",
-        "btn_redo": "Redo",
-        "btn_takeback": "Takeback",
-        "btn_resign": "Resign",
-        "btn_new_game": "New game",
-        "btn_settings_in_game": "Settings",
-
-        "mode_pvp": "Mode: PvP",
-        "mode_ai": "Mode: vs AI",
-        "turn_red": "Turn: RED",
-        "turn_black": "Turn: BLACK",
-
-        "check_on_red": "CHECK on RED",
-        "check_on_black": "CHECK on BLACK",
-        "red_wins": "RED wins",
-        "black_wins": "BLACK wins",
-        "game_over": "Game over",
-
-        "settings_board_theme": "Board: {name}",
-        "settings_piece_theme": "Pieces: {name}",
-        "settings_display": "Display: {mode}",
-        "display_window": "Window",
-        "display_fullscreen": "Fullscreen",
-
-        "settings_player_stats": "Player stats",
-        "stats_title": "Player stats",
-        "stats_overall": "Overall",
-        "stats_vs_ai": "vs AI",
-        "stats_vs_human": "vs human",
-        "stats_games": "Games",
-        "stats_wins": "Wins",
-        "stats_losses": "Losses",
-        "stats_draws": "Draws",
-        "stats_winrate": "Winrate",
-
-        "label_red_player": "RED: {name}",
-        "label_black_player": "BLACK: {name}",
-        "label_ai_player": "AI: {name}",
-
-    },
-    "vi": {
-        "title": "Cờ tướng",
-        "subtitle": "Nhấn Esc trong game để quay lại menu",
-        "menu_pvp": "Chơi 2 người (cùng máy)",
-        "menu_ai": "Chơi với máy",
-        "menu_settings": "Cài đặt",
-        "menu_exit": "Thoát",
-
-        "settings_title": "Cài đặt",
-        "btn_back": "Quay lại",
-
-        "btn_undo": "Đi lại",
-        "btn_redo": "Tiến tới",
-        "btn_takeback": "Xin đi lại",
-        "btn_resign": "Đầu hàng",
-        "btn_new_game": "Ván mới",
-        "btn_settings_in_game": "Cài đặt",
-
-        "mode_pvp": "Chế độ: 2 người",
-        "mode_ai": "Chế độ: Chơi với máy",
-        "turn_red": "Lượt: ĐỎ",
-        "turn_black": "Lượt: ĐEN",
-
-        "check_on_red": "Chiếu tướng ĐỎ",
-        "check_on_black": "Chiếu tướng ĐEN",
-        "red_wins": "ĐỎ thắng",
-        "black_wins": "ĐEN thắng",
-        "game_over": "Ván cờ kết thúc",
-
-        "settings_board_theme": "Bàn cờ: {name}",
-        "settings_piece_theme": "Quân cờ: {name}",
-        "settings_display": "Hiển thị: {mode}",
-        "display_window": "Cửa sổ",
-        "display_fullscreen": "Toàn màn hình",
-        "settings_player_stats": "Thống kê người chơi",
-        "stats_title": "Thống kê người chơi",
-        "stats_overall": "Tổng",
-        "stats_vs_ai": "Vs máy",
-        "stats_vs_human": "Vs người",
-        "stats_games": "Số ván",
-        "stats_wins": "Thắng",
-        "stats_losses": "Thua",
-        "stats_draws": "Hòa",
-        "stats_winrate": "Tỉ lệ thắng",
-
-        "label_red_player": "ĐỎ: {name}",
-        "label_black_player": "ĐEN: {name}",
-        "label_ai_player": "AI: {name}",
-    },
-}
-
-
-def t(settings, key):
-    return TEXT[settings.language][key]
-
-# ---------- Themes ----------
-
-BOARD_THEMES = [
-    {
-        "key": "classic",
-        "name": {"en": "Classic", "vi": "Cổ điển"},
-        "bg_color": (230, 200, 150),
-        "line_color": (80, 40, 10),
-        "river_color": (220, 210, 170),
-    },
-    {
-        "key": "dark_wood",
-        "name": {"en": "Dark wood", "vi": "Gỗ tối"},
-        "bg_color": (80, 60, 50),
-        "line_color": (220, 200, 160),
-        "river_color": (100, 80, 60),
-    },
-    {
-        "key": "green_board",
-        "name": {"en": "Green board", "vi": "Xanh cổ điển"},
-        "bg_color": (200, 220, 200),
-        "line_color": (40, 80, 40),
-        "river_color": (180, 210, 190),
-    },
-]
-
-PIECE_THEMES = [
-    {
-        "key": "red_black",
-        "name": {"en": "Red vs Black", "vi": "Đỏ vs Đen"},
-        "red_color": (220, 50, 50),
-        "black_color": (30, 30, 30),
-    },
-    {
-        "key": "blue_gold",
-        "name": {"en": "Blue vs Gold", "vi": "Xanh vs Vàng"},
-        "red_color": (40, 120, 220),
-        "black_color": (200, 160, 40),
-    },
-    {
-        "key": "crimson_gray",
-        "name": {"en": "Crimson vs Gray", "vi": "Đỏ sậm vs Xám"},
-        "red_color": (200, 40, 80),
-        "black_color": (60, 60, 70),
-    },
-]
-
-class Settings:
-    def __init__(self):
-        self.board_theme_index = 0
-        self.piece_theme_index = 0
-        self.display_mode = "window"  # "window" or "fullscreen"
-        self.language = "vi"          # "vi" or "en"
-
-SETTINGS_FILE = "settings.json"
-
-def settings_to_dict(settings: Settings):
-    return {
-        "board_theme_index": settings.board_theme_index,
-        "piece_theme_index": settings.piece_theme_index,
-        "display_mode": settings.display_mode,
-        "language": settings.language,
-    }
-
-def load_settings() -> Settings:
-    s = Settings()
-    if not os.path.exists(SETTINGS_FILE):
-        return s
-
-    try:
-        with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        return s
-
-    if isinstance(data, dict):
-        if "board_theme_index" in data:
-            s.board_theme_index = int(data["board_theme_index"]) % len(BOARD_THEMES)
-        if "piece_theme_index" in data:
-            s.piece_theme_index = int(data["piece_theme_index"]) % len(PIECE_THEMES)
-        if data.get("display_mode") in ("window", "fullscreen"):
-            s.display_mode = data["display_mode"]
-        if data.get("language") in ("vi", "en"):
-            s.language = data["language"]
-    return s
-
-def save_settings(settings: Settings):
-    data = settings_to_dict(settings)
-    try:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-# ---------- Avatar assets ----------
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSETS_DIR = os.path.join(BASE_DIR, "..", "assets")
-AVATAR_DIR = os.path.join(ASSETS_DIR, "avatars")
-
-BUILTIN_AVATARS = [
-    "player1.png",
-    "player2.png",
-    "player3.png",
-]
-
-AVATAR_BOARD_SIZE = int(CELL_SIZE * 2.4)
-
-_avatar_cache = {}
-
-
-def resolve_avatar_path(path: str) -> str:
-    if not path:
-        return ""
-    if os.path.isabs(path):
-        return path
-    return os.path.join(AVATAR_DIR, path)
-
-
-def load_avatar_image(path: str, size: int):
-    if not path:
-        return None
-    full_path = resolve_avatar_path(path)
-    key = (full_path, size)
-    if key in _avatar_cache:
-        return _avatar_cache[key]
-    if not os.path.exists(full_path):
-        return None
-    try:
-        img = pygame.image.load(full_path).convert_alpha()
-    except Exception:
-        return None
-    img = pygame.transform.smoothscale(img, (size, size))
-    _avatar_cache[key] = img
-    return img
-
-
-def select_avatar_file_dialog():
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        filetypes = [
-            ("Image files", "*.png;*.jpg;*.jpeg;*.bmp"),
-            ("All files", "*.*"),
-        ]
-        filename = filedialog.askopenfilename(
-            title="Select avatar image",
-            filetypes=filetypes,
-        )
-        root.destroy()
-        if filename:
-            return filename
-    except Exception:
-        return None
-
-# ---------- Profiles (profiles.json) ----------
-
-PROFILES_FILE = "profiles.json"
-
-
-def default_profiles_data():
-    return {
-        "version": 1,
-        "players": [
-            {
-                "id": "p1",
-                "display_name": "Player 1",
-                "avatar": {
-                    "type": "color",
-                    "color": [220, 50, 50],
-                    "symbol": "P1",
-                },
-                "stats": {
-                    "overall": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
-                    "vs_ai": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
-                    "vs_human": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
-                },
-            },
-            {
-                "id": "p2",
-                "display_name": "Player 2",
-                "avatar": {
-                    "type": "color",
-                    "color": [40, 120, 220],
-                    "symbol": "P2",
-                },
-                "stats": {
-                    "overall": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
-                    "vs_ai": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
-                    "vs_human": {"games": 0, "wins": 0, "losses": 0, "draws": 0},
-                },
-            },
-        ],
-        "last_selected": {
-            "pvp": {
-                "red_player_id": "p1",
-                "black_player_id": "p2",
-            },
-            "ai": {
-                "human_player_id": "p1",
-            },
-        },
-    }
-
-
-def load_profiles():
-    if not os.path.exists(PROFILES_FILE):
-        data = default_profiles_data()
-        save_profiles(data)
-        return data
-    try:
-        with open(PROFILES_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        data = default_profiles_data()
-        save_profiles(data)
-    return data
-
-
-def save_profiles(data):
-    try:
-        with open(PROFILES_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-
-def find_player(data, player_id):
-    for p in data.get("players", []):
-        if p.get("id") == player_id:
-            return p
-    return None
-
-
-def update_stats_for_player(player, result, is_vs_ai):
-    stats = player["stats"]
-
-    stats["overall"]["games"] += 1
-    if result == "win":
-        stats["overall"]["wins"] += 1
-    elif result == "loss":
-        stats["overall"]["losses"] += 1
-    elif result == "draw":
-        stats["overall"]["draws"] += 1
-
-    key = "vs_ai" if is_vs_ai else "vs_human"
-    stats[key]["games"] += 1
-    if result == "win":
-        stats[key]["wins"] += 1
-    elif result == "loss":
-        stats[key]["losses"] += 1
-    elif result == "draw":
-        stats[key]["draws"] += 1
-
-def apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw):
-    if mode not in ("pvp", "ai"):
-        return
-
-    if mode == "pvp":
-        pvp_info = profiles_data.get("last_selected", {}).get("pvp", {})
-        red_id = pvp_info.get("red_player_id", "p1")
-        black_id = pvp_info.get("black_player_id", "p2")
-        red_player = find_player(profiles_data, red_id)
-        black_player = find_player(profiles_data, black_id)
-        if red_player is None or black_player is None:
-            return
-
-        if is_draw or winner_side is None:
-            update_stats_for_player(red_player, "draw", is_vs_ai=False)
-            update_stats_for_player(black_player, "draw", is_vs_ai=False)
-        else:
-            if winner_side == Side.RED:
-                update_stats_for_player(red_player, "win", is_vs_ai=False)
-                update_stats_for_player(black_player, "loss", is_vs_ai=False)
-            else:
-                update_stats_for_player(red_player, "loss", is_vs_ai=False)
-                update_stats_for_player(black_player, "win", is_vs_ai=False)
-
-    elif mode == "ai":
-        ai_info = profiles_data.get("last_selected", {}).get("ai", {})
-        human_id = ai_info.get("human_player_id", "p1")
-        human_player = find_player(profiles_data, human_id)
-        if human_player is None:
-            return
-
-        if is_draw or winner_side is None:
-            update_stats_for_player(human_player, "draw", is_vs_ai=True)
-        else:
-            if winner_side == HUMAN_SIDE:
-                update_stats_for_player(human_player, "win", is_vs_ai=True)
-            else:
-                update_stats_for_player(human_player, "loss", is_vs_ai=True)
-
-    save_profiles(profiles_data)
-
-# Sides
-AI_SIDE = Side.BLACK
-HUMAN_SIDE = Side.RED
-
-# AI Levels
-AI_LEVELS = [
-    {
-        "name": "Noob Bot",
-        "avatar_char": "N",
-        "color": (120, 170, 255),
-        "depth": 1,
-        "randomness": 0.9,
-        "avatar_path": "ai_casual.jpg",
-    },
-    {
-        "name": "Pro Bot",
-        "avatar_char": "P",
-        "color": (120, 220, 120),
-        "depth": 1,
-        "randomness": 0.2,
-        "avatar_path": "ai_soldier.jpg",
-    },
-    {
-        "name": "Hacker Bot",
-        "avatar_char": "H",
-        "color": (220, 120, 120),
-        "depth": 2,
-        "randomness": 0.0,
-        "avatar_path": "ai_general.jpg",
-    },
-]
-
-class Button:
-    def __init__(self, rect, label=""):
-        self.rect = rect
-        self.label = label
-
-    def draw(self, surface, font, enabled=True):
-        bg = (200, 200, 200) if enabled else (160, 160, 160)
-        border = (80, 80, 80)
-        pygame.draw.rect(surface, bg, self.rect, border_radius=6)
-        pygame.draw.rect(surface, border, self.rect, 2, border_radius=6)
-        text_color = (0, 0, 0)
-        text_surf = font.render(self.label, True, text_color)
-        text_rect = text_surf.get_rect(center=self.rect.center)
-        surface.blit(text_surf, text_rect)
-
-    def is_clicked(self, pos):
-        return self.rect.collidepoint(pos)
-
-
-def board_to_screen(col, row):
-    x = MARGIN_X + col * CELL_SIZE
-    y = MARGIN_Y + row * CELL_SIZE
-    return x, y
-
-
-def screen_to_board(x, y):
-    col = (x - MARGIN_X + CELL_SIZE // 2) // CELL_SIZE
-    row = (y - MARGIN_Y + CELL_SIZE // 2) // CELL_SIZE
-    if 0 <= col < BOARD_COLS and 0 <= row < BOARD_ROWS:
-        return int(col), int(row)
-    return None, None
-
-
-def draw_board(surface, settings: Settings):
-    theme = BOARD_THEMES[settings.board_theme_index]
-    bg_color = theme["bg_color"]
-    line_color = theme["line_color"]
-    river_color = theme["river_color"]
-
-    surface.fill(bg_color)
-
-    for c in range(BOARD_COLS):
-        x = MARGIN_X + c * CELL_SIZE
-        y1 = MARGIN_Y
-        y2 = MARGIN_Y + (BOARD_ROWS - 1) * CELL_SIZE
-        pygame.draw.line(surface, line_color, (x, y1), (x, y2), 2)
-
-    for r in range(BOARD_ROWS):
-        y = MARGIN_Y + r * CELL_SIZE
-        x1 = MARGIN_X
-        x2 = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
-        pygame.draw.line(surface, line_color, (x1, y), (x2, y), 2)
-
-    river_y_top = MARGIN_Y + 4 * CELL_SIZE
-    river_rect = pygame.Rect(
-        MARGIN_X,
-        river_y_top,
-        (BOARD_COLS - 1) * CELL_SIZE,
-        CELL_SIZE,
-    )
-    pygame.draw.rect(surface, river_color, river_rect)
-
-def draw_piece(surface, piece, col, row, font, settings: Settings):
-    x, y = board_to_screen(col, row)
-    cx = x
-    cy = y
-    radius = CELL_SIZE // 2 - 4
-    theme = PIECE_THEMES[settings.piece_theme_index]
-    color = theme["red_color"] if piece.side == Side.RED else theme["black_color"]
-
-    pygame.draw.circle(surface, (245, 230, 200), (cx, cy), radius)
-    pygame.draw.circle(surface, color, (cx, cy), radius, 2)
-
-    if piece.ptype == PieceType.GENERAL:
-        text = "帥" if piece.side == Side.RED else "將"
-    elif piece.ptype == PieceType.ADVISOR:
-        text = "仕" if piece.side == Side.RED else "士"
-    elif piece.ptype == PieceType.ELEPHANT:
-        text = "相" if piece.side == Side.RED else "象"
-    elif piece.ptype == PieceType.HORSE:
-        text = "傌" if piece.side == Side.RED else "馬"
-    elif piece.ptype == PieceType.ROOK:
-        text = "俥" if piece.side == Side.RED else "車"
-    elif piece.ptype == PieceType.CANNON:
-        text = "炮" if piece.side == Side.RED else "砲"
-    else:
-        text = "兵" if piece.side == Side.RED else "卒"
-
-    text_surf = font.render(text, True, color)
-    text_rect = text_surf.get_rect(center=(cx, cy))
-    surface.blit(text_surf, text_rect)
-
-
-def draw_selection(surface, col, row):
-    x, y = board_to_screen(col, row)
-    radius = CELL_SIZE // 2 - 2
-    pygame.draw.circle(surface, (255, 215, 0), (x, y), radius, 3)
-
-
-def draw_move_hints(surface, moves):
-    for c, r in moves:
-        x, y = board_to_screen(c, r)
-        pygame.draw.circle(surface, (0, 150, 0), (x, y), 6)
-        
-def draw_profile_avatar(surface, profile, center, size, font_avatar):
-    avatar = profile.get("avatar", {})
-    path = avatar.get("path")
-    img = load_avatar_image(path, size)
-    rect = pygame.Rect(0, 0, size, size)
-    rect.center = center
-    if img is not None:
-        surface.blit(img, rect)
-    else:
-        color = tuple(avatar.get("color", [180, 180, 180]))
-        pygame.draw.rect(surface, color, rect)
-        pygame.draw.rect(surface, (0, 0, 0), rect, 2)
-        initials = avatar.get("symbol") or profile.get("display_name", "?")[:2]
-        text = font_avatar.render(str(initials), True, (0, 0, 0))
-        text_rect = text.get_rect(center=rect.center)
-        surface.blit(text, text_rect)
-
-
-def draw_ai_avatar(surface, ai_level_cfg, center, size, font_avatar):
-    path = ai_level_cfg.get("avatar_path")
-    img = load_avatar_image(path, size)
-    rect = pygame.Rect(0, 0, size, size)
-    rect.center = center
-    if img is not None:
-        surface.blit(img, rect)
-    else:
-        color = ai_level_cfg.get("color", (120, 120, 120))
-        pygame.draw.rect(surface, color, rect)
-        pygame.draw.rect(surface, (0, 0, 0), rect, 2)
-        symbol = ai_level_cfg.get("avatar_char", "?")
-        text = font_avatar.render(str(symbol), True, (0, 0, 0))
-        text_rect = text.get_rect(center=rect.center)
-        surface.blit(text, text_rect)
-
-
-def get_bottom_avatar_rect():
-    rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
-    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE // 2
-    cy = MARGIN_Y + (BOARD_ROWS - 1) * CELL_SIZE + CELL_SIZE // 2
-    rect.center = (cx, cy)
-    return rect
-
-
-def get_top_avatar_rect():
-    rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
-    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE // 2
-    cy = MARGIN_Y + CELL_SIZE // 2
-    rect.center = (cx, cy)
-    return rect
-
-
-def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, font_avatar):
-    last_sel = profiles_data.get("last_selected", {})
-    if mode == "pvp":
-        pvp_info = last_sel.get("pvp", {})
-        red_id = pvp_info.get("red_player_id", "p1")
-        black_id = pvp_info.get("black_player_id", "p2")
-        red_player = find_player(profiles_data, red_id)
-        black_player = find_player(profiles_data, black_id)
-
-        bottom_rect = get_bottom_avatar_rect()
-        top_rect = get_top_avatar_rect()
-        if red_player:
-            draw_profile_avatar(surface, red_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-        if black_player:
-            draw_profile_avatar(surface, black_player, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-    elif mode == "ai":
-        ai_info = last_sel.get("ai", {})
-        human_id = ai_info.get("human_player_id", "p1")
-        human_player = find_player(profiles_data, human_id)
-        bottom_rect = get_bottom_avatar_rect()
-        top_rect = get_top_avatar_rect()
-        if human_player:
-            draw_profile_avatar(surface, human_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-        ai_cfg = AI_LEVELS[ai_level_index]
-        draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-
-# ===========================
-# AI helper
-# ===========================
-
-PIECE_VALUES = {
-    PieceType.GENERAL: 10000,
-    PieceType.ROOK: 500,
-    PieceType.CANNON: 275,
-    PieceType.HORSE: 275,
-    PieceType.ELEPHANT: 125,
-    PieceType.ADVISOR: 125,
-    PieceType.SOLDIER: 60,
-}
-
-
-def evaluate_board(board: Board, ai_side: Side) -> int:
-    score = 0
-    for r in range(BOARD_ROWS):
-        for c in range(BOARD_COLS):
-            p = board.get_piece(c, r)
-            if p is None:
-                continue
-            val = PIECE_VALUES.get(p.ptype, 0)
-            if p.side == ai_side:
-                score += val
-            else:
-                score -= val
-    return score
-
-
-def generate_all_legal_moves(board: Board, side: Side):
-    moves = []
-    for r in range(BOARD_ROWS):
-        for c in range(BOARD_COLS):
-            p = board.get_piece(c, r)
-            if p is None or p.side != side:
-                continue
-            legal = board.generate_legal_moves(c, r, side)
-            for nc, nr in legal:
-                captured = board.get_piece(nc, nr)
-                mv = Move((c, r), (nc, nr), p, captured)
-                moves.append(mv)
-    return moves
-
-
-def minimax_search(board: Board, depth: int, ai_side: Side, current_side: Side, alpha: float, beta: float) -> float:
-    if depth == 0:
-        return evaluate_board(board, ai_side)
-
-    moves = generate_all_legal_moves(board, current_side)
-    if not moves:
-        if board.is_in_check(current_side):
-            return -100000 if current_side == ai_side else 100000
-        else:
-            return 0
-
-    if current_side == ai_side:
-        best = -math.inf
-        for mv in moves:
-            from_c, from_r = mv.from_pos
-            to_c, to_r = mv.to_pos
-            captured = board._apply_temp_move(from_c, from_r, to_c, to_r)
-            next_side = Side.RED if current_side == Side.BLACK else Side.BLACK
-            score = minimax_search(board, depth - 1, ai_side, next_side, alpha, beta)
-            board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
-
-            if score > best:
-                best = score
-            alpha = max(alpha, score)
-            if beta <= alpha:
-                break
-        return best
-    else:
-        best = math.inf
-        for mv in moves:
-            from_c, from_r = mv.from_pos
-            to_c, to_r = mv.to_pos
-            captured = board._apply_temp_move(from_c, from_r, to_c, to_r)
-            next_side = Side.RED if current_side == Side.BLACK else Side.BLACK
-            score = minimax_search(board, depth - 1, ai_side, next_side, alpha, beta)
-            board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
-
-            if score < best:
-                best = score
-            beta = min(beta, score)
-            if beta <= alpha:
-                break
-        return best
-
-
-def choose_ai_move(board: Board, level_cfg, side: Side):
-    moves = generate_all_legal_moves(board, side)
-    if not moves:
-        return None
-
-    depth = level_cfg["depth"]
-    randomness = level_cfg["randomness"]
-
-    if randomness > 0 and random.random() < randomness:
-        return random.choice(moves)
-
-    best_score = -math.inf
-    best_moves = []
-
-    for mv in moves:
-        from_c, from_r = mv.from_pos
-        to_c, to_r = mv.to_pos
-        captured = board._apply_temp_move(from_c, from_r, to_c, to_r)
-
-        if depth <= 1:
-            score = evaluate_board(board, side)
-        else:
-            next_side = Side.RED if side == Side.BLACK else Side.BLACK
-            score = minimax_search(board, depth - 1, side, next_side, -math.inf, math.inf)
-
-        board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
-
-        if score > best_score + 1e-6:
-            best_score = score
-            best_moves = [mv]
-        elif abs(score - best_score) <= 1e-6:
-            best_moves.append(mv)
-
-    return random.choice(best_moves) if best_moves else random.choice(moves)
-
-# ===========================
-# Main Application 
-# ===========================
 
 def run_game():
     pygame.init()
 
-    # Load settings and profiles
     settings = load_settings()
     profiles_data = load_profiles()
 
@@ -799,18 +66,16 @@ def run_game():
     mode = None
     ai_level_index = 1
     settings_return_state = "menu"
-    settings_page = "main"  # "main" or "stats"
+    settings_page = "main"
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
 
-# Buttons trong game
     btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 200, 190, 30))
     btn_takeback = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 190, 30))
     btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 90, 30))
     btn_new_game = Button(pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 80, 90, 30))
     btn_ai_level = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 95, 160, 28))
 
-    # Buttons menu
     center_x = WINDOW_WIDTH // 2
     start_y = WINDOW_HEIGHT // 2 - 80
     btn_menu_pvp = Button(pygame.Rect(center_x - 100, start_y, 200, 40))
@@ -818,7 +83,6 @@ def run_game():
     btn_menu_settings = Button(pygame.Rect(center_x - 100, start_y + 100, 200, 40))
     btn_menu_exit = Button(pygame.Rect(center_x - 100, start_y + 150, 200, 40))
 
-    # Buttons settings
     settings_center_x = WINDOW_WIDTH // 2
     btn_settings_board_theme = Button(pygame.Rect(settings_center_x - 160, 220, 320, 36))
     btn_settings_piece_theme = Button(pygame.Rect(settings_center_x - 160, 270, 320, 36))
@@ -833,7 +97,6 @@ def run_game():
             screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN)
         else:
             screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-
 
     def reset_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack
@@ -903,17 +166,14 @@ def run_game():
             in_check_side = None
             return
 
-
         board.move_piece(mv)
         move_history.append(mv)
         redo_stack.clear()
         selected = None
         valid_moves = []
 
-        # Change turn to player
         current_side = HUMAN_SIDE
         update_game_state_after_side_change()
-
 
     running = True
     while running:
@@ -937,7 +197,6 @@ def run_game():
                 mx, my = event.pos
                 btn = event.button
 
-                # Avatar click (left to cycle builtin, right to choose file)
                 if state in ("pvp", "ai"):
                     bottom_rect = get_bottom_avatar_rect()
                     top_rect = get_top_avatar_rect()
@@ -1003,7 +262,6 @@ def run_game():
                 lang = settings.language
                 lang_text = TEXT[lang]
 
-                # --------- STATE: MENU ----------
                 if state == "menu":
                     if btn_menu_pvp.is_clicked((mx, my)):
                         reset_game()
@@ -1023,7 +281,6 @@ def run_game():
                         running = False
                         continue
 
-                # -------- SETTINGS --------
                 elif state == "settings":
                     if settings_page == "main":
                         if btn_settings_board_theme.is_clicked((mx, my)):
@@ -1050,13 +307,11 @@ def run_game():
                             state = settings_return_state
                             settings_page = "main"
                             continue
-                    else:  # settings_page == "stats"
+                    else:
                         if btn_settings_back.is_clicked((mx, my)):
                             settings_page = "main"
                             continue
 
-
-                # --------- STATE: GAME (PVP / AI) ----------
                 elif state in ("pvp", "ai"):
                     if btn_in_game_settings.is_clicked((mx, my)):
                         settings_return_state = state
@@ -1172,6 +427,7 @@ def run_game():
                 for c in range(BOARD_COLS):
                     piece = board.get_piece(c, r)
                     if piece is not None:
+                        from core.engine.draw_helpers import draw_piece  
                         draw_piece(screen, piece, c, r, font_piece, settings)
 
             mode_text = lang_text["mode_pvp"] if mode == "pvp" else lang_text["mode_ai"]
@@ -1200,7 +456,6 @@ def run_game():
                 screen.blit(win_surf, (panel_x, y_info))
                 y_info += 25
 
-            # Player info + small avatar on panel
             last_sel = profiles_data.get("last_selected", {})
             pvp_info = last_sel.get("pvp", {})
             ai_info = last_sel.get("ai", {})
