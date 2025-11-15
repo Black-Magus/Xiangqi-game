@@ -219,6 +219,71 @@ def save_settings(settings: Settings):
     except Exception:
         pass
 
+# ---------- Avatar assets ----------
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSETS_DIR = os.path.join(BASE_DIR, "..", "assets")
+AVATAR_DIR = os.path.join(ASSETS_DIR, "avatars")
+
+BUILTIN_AVATARS = [
+    "player1.png",
+    "player2.png",
+    "player3.png",
+]
+
+AVATAR_BOARD_SIZE = int(CELL_SIZE * 2.4)
+
+_avatar_cache = {}
+
+
+def resolve_avatar_path(path: str) -> str:
+    if not path:
+        return ""
+    if os.path.isabs(path):
+        return path
+    return os.path.join(AVATAR_DIR, path)
+
+
+def load_avatar_image(path: str, size: int):
+    if not path:
+        return None
+    full_path = resolve_avatar_path(path)
+    key = (full_path, size)
+    if key in _avatar_cache:
+        return _avatar_cache[key]
+    if not os.path.exists(full_path):
+        return None
+    try:
+        img = pygame.image.load(full_path).convert_alpha()
+    except Exception:
+        return None
+    img = pygame.transform.smoothscale(img, (size, size))
+    _avatar_cache[key] = img
+    return img
+
+
+def select_avatar_file_dialog():
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        filetypes = [
+            ("Image files", "*.png;*.jpg;*.jpeg;*.bmp"),
+            ("All files", "*.*"),
+        ]
+        filename = filedialog.askopenfilename(
+            title="Select avatar image",
+            filetypes=filetypes,
+        )
+        root.destroy()
+        if filename:
+            return filename
+    except Exception:
+        return None
+
 # ---------- Profiles (profiles.json) ----------
 
 PROFILES_FILE = "profiles.json"
@@ -365,9 +430,30 @@ HUMAN_SIDE = Side.RED
 
 # AI Levels
 AI_LEVELS = [
-    {"name": "Noob Bot", "avatar_char": "N", "color": (120, 170, 255), "depth": 1, "randomness": 0.9},
-    {"name": "Pro Bot", "avatar_char": "P", "color": (120, 220, 120), "depth": 1, "randomness": 0.2},
-    {"name": "Hacker Bot", "avatar_char": "H", "color": (220, 120, 120), "depth": 2, "randomness": 0.0},
+    {
+        "name": "Noob Bot",
+        "avatar_char": "N",
+        "color": (120, 170, 255),
+        "depth": 1,
+        "randomness": 0.9,
+        "avatar_path": "ai_casual.jpg",
+    },
+    {
+        "name": "Pro Bot",
+        "avatar_char": "P",
+        "color": (120, 220, 120),
+        "depth": 1,
+        "randomness": 0.2,
+        "avatar_path": "ai_soldier.jpg",
+    },
+    {
+        "name": "Hacker Bot",
+        "avatar_char": "H",
+        "color": (220, 120, 120),
+        "depth": 2,
+        "randomness": 0.0,
+        "avatar_path": "ai_general.jpg",
+    },
 ]
 
 class Button:
@@ -474,26 +560,82 @@ def draw_move_hints(surface, moves):
         x, y = board_to_screen(c, r)
         pygame.draw.circle(surface, (0, 150, 0), (x, y), 6)
         
-def draw_profile_avatar(surface, profile, center, font_avatar):
+def draw_profile_avatar(surface, profile, center, size, font_avatar):
     avatar = profile.get("avatar", {})
-    color = avatar.get("color", [150, 150, 150])
-    symbol = avatar.get("symbol", "?")
-    pygame.draw.circle(surface, tuple(color), center, 12)
-    pygame.draw.circle(surface, (0, 0, 0), center, 12, 2)
-    text = font_avatar.render(str(symbol), True, (0, 0, 0))
-    rect = text.get_rect(center=center)
-    surface.blit(text, rect)
+    path = avatar.get("path")
+    img = load_avatar_image(path, size)
+    rect = pygame.Rect(0, 0, size, size)
+    rect.center = center
+    if img is not None:
+        surface.blit(img, rect)
+    else:
+        color = tuple(avatar.get("color", [180, 180, 180]))
+        pygame.draw.rect(surface, color, rect)
+        pygame.draw.rect(surface, (0, 0, 0), rect, 2)
+        initials = avatar.get("symbol") or profile.get("display_name", "?")[:2]
+        text = font_avatar.render(str(initials), True, (0, 0, 0))
+        text_rect = text.get_rect(center=rect.center)
+        surface.blit(text, text_rect)
 
 
-def draw_ai_avatar(surface, ai_level_cfg, center, font_avatar):
-    color = ai_level_cfg["color"]
-    symbol = ai_level_cfg["avatar_char"]
-    pygame.draw.circle(surface, color, center, 12)
-    pygame.draw.circle(surface, (0, 0, 0), center, 12, 2)
-    text = font_avatar.render(str(symbol), True, (0, 0, 0))
-    rect = text.get_rect(center=center)
-    surface.blit(text, rect)
+def draw_ai_avatar(surface, ai_level_cfg, center, size, font_avatar):
+    path = ai_level_cfg.get("avatar_path")
+    img = load_avatar_image(path, size)
+    rect = pygame.Rect(0, 0, size, size)
+    rect.center = center
+    if img is not None:
+        surface.blit(img, rect)
+    else:
+        color = ai_level_cfg.get("color", (120, 120, 120))
+        pygame.draw.rect(surface, color, rect)
+        pygame.draw.rect(surface, (0, 0, 0), rect, 2)
+        symbol = ai_level_cfg.get("avatar_char", "?")
+        text = font_avatar.render(str(symbol), True, (0, 0, 0))
+        text_rect = text.get_rect(center=rect.center)
+        surface.blit(text, text_rect)
 
+
+def get_bottom_avatar_rect():
+    rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
+    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE // 2
+    cy = MARGIN_Y + (BOARD_ROWS - 1) * CELL_SIZE + CELL_SIZE // 2
+    rect.center = (cx, cy)
+    return rect
+
+
+def get_top_avatar_rect():
+    rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
+    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE // 2
+    cy = MARGIN_Y + CELL_SIZE // 2
+    rect.center = (cx, cy)
+    return rect
+
+
+def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, font_avatar):
+    last_sel = profiles_data.get("last_selected", {})
+    if mode == "pvp":
+        pvp_info = last_sel.get("pvp", {})
+        red_id = pvp_info.get("red_player_id", "p1")
+        black_id = pvp_info.get("black_player_id", "p2")
+        red_player = find_player(profiles_data, red_id)
+        black_player = find_player(profiles_data, black_id)
+
+        bottom_rect = get_bottom_avatar_rect()
+        top_rect = get_top_avatar_rect()
+        if red_player:
+            draw_profile_avatar(surface, red_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+        if black_player:
+            draw_profile_avatar(surface, black_player, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+    elif mode == "ai":
+        ai_info = last_sel.get("ai", {})
+        human_id = ai_info.get("human_player_id", "p1")
+        human_player = find_player(profiles_data, human_id)
+        bottom_rect = get_bottom_avatar_rect()
+        top_rect = get_top_avatar_rect()
+        if human_player:
+            draw_profile_avatar(surface, human_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+        ai_cfg = AI_LEVELS[ai_level_index]
+        draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
 
 # ===========================
 # AI helper
@@ -642,8 +784,6 @@ def run_game():
     font_title = pygame.font.SysFont("SimHei", 40, bold=True)
     font_avatar = pygame.font.SysFont("Consolas", 16, bold=True)
 
-    settings = load_settings()
-
     board = Board()
     current_side = Side.RED
     selected = None
@@ -786,12 +926,79 @@ def run_game():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if state == "settings":
-                        state = settings_return_state
+                        if settings_page == "stats":
+                            settings_page = "main"
+                        else:
+                            state = settings_return_state
                     elif state != "menu":
                         switch_to_menu()
 
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
+                btn = event.button
+
+                # Avatar click (left to cycle builtin, right to choose file)
+                if state in ("pvp", "ai"):
+                    bottom_rect = get_bottom_avatar_rect()
+                    top_rect = get_top_avatar_rect()
+                    clicked_avatar = False
+
+                    if bottom_rect.collidepoint(mx, my):
+                        clicked_avatar = True
+                        if mode == "pvp":
+                            red_id = profiles_data.get("last_selected", {}).get("pvp", {}).get("red_player_id", "p1")
+                            player = find_player(profiles_data, red_id)
+                        else:
+                            human_id = profiles_data.get("last_selected", {}).get("ai", {}).get("human_player_id", "p1")
+                            player = find_player(profiles_data, human_id)
+
+                        if player is not None:
+                            avatar = player.setdefault("avatar", {})
+                            if btn == 1:
+                                current = avatar.get("path")
+                                if current in BUILTIN_AVATARS:
+                                    idx = BUILTIN_AVATARS.index(current)
+                                    idx = (idx + 1) % len(BUILTIN_AVATARS)
+                                else:
+                                    idx = 0
+                                avatar["type"] = "image"
+                                avatar["path"] = BUILTIN_AVATARS[idx]
+                                save_profiles(profiles_data)
+                            elif btn == 3:
+                                filename = select_avatar_file_dialog()
+                                if filename:
+                                    avatar["type"] = "image"
+                                    avatar["path"] = filename
+                                    save_profiles(profiles_data)
+
+                    elif top_rect.collidepoint(mx, my) and mode == "pvp":
+                        clicked_avatar = True
+                        black_id = profiles_data.get("last_selected", {}).get("pvp", {}).get("black_player_id", "p2")
+                        player = find_player(profiles_data, black_id)
+                        if player is not None:
+                            avatar = player.setdefault("avatar", {})
+                            if btn == 1:
+                                current = avatar.get("path")
+                                if current in BUILTIN_AVATARS:
+                                    idx = BUILTIN_AVATARS.index(current)
+                                    idx = (idx + 1) % len(BUILTIN_AVATARS)
+                                else:
+                                    idx = 0
+                                avatar["type"] = "image"
+                                avatar["path"] = BUILTIN_AVATARS[idx]
+                                save_profiles(profiles_data)
+                            elif btn == 3:
+                                filename = select_avatar_file_dialog()
+                                if filename:
+                                    avatar["type"] = "image"
+                                    avatar["path"] = filename
+                                    save_profiles(profiles_data)
+
+                    if clicked_avatar:
+                        continue
+
+                if btn != 1:
+                    continue
 
                 lang = settings.language
                 lang_text = TEXT[lang]
@@ -851,9 +1058,9 @@ def run_game():
 
                 # --------- STATE: GAME (PVP / AI) ----------
                 elif state in ("pvp", "ai"):
-                    # in-game settings
                     if btn_in_game_settings.is_clicked((mx, my)):
                         settings_return_state = state
+                        settings_page = "main"
                         state = "settings"
                         continue
 
@@ -868,11 +1075,7 @@ def run_game():
                                 last_move = move_history.pop()
                                 board.undo_move(last_move)
                                 redo_stack.append(last_move)
-                                current_side = (
-                                    Side.RED
-                                    if current_side == Side.BLACK
-                                    else Side.BLACK
-                                )
+                                current_side = Side.RED if current_side == Side.BLACK else Side.BLACK
                             update_game_state_after_side_change()
                         continue
 
@@ -893,21 +1096,17 @@ def run_game():
 
                     if game_over:
                         continue
+
                     if state == "ai" and current_side == AI_SIDE:
                         continue
 
-                    # Handle click on the board
                     col, row = screen_to_board(mx, my)
                     if col is not None:
                         piece = board.get_piece(col, row)
                         if selected is None:
                             if piece is not None and piece.side == current_side:
                                 selected = (col, row)
-                                valid_moves = board.generate_legal_moves(
-                                    col,
-                                    row,
-                                    current_side,
-                                )
+                                valid_moves = board.generate_legal_moves(col, row, current_side)
                             else:
                                 selected = None
                                 valid_moves = []
@@ -919,30 +1118,17 @@ def run_game():
                             else:
                                 if piece is not None and piece.side == current_side:
                                     selected = (col, row)
-                                    valid_moves = board.generate_legal_moves(
-                                        col,
-                                        row,
-                                        current_side,
-                                    )
+                                    valid_moves = board.generate_legal_moves(col, row, current_side)
                                 else:
                                     if (col, row) in valid_moves:
                                         moving_piece = board.get_piece(sel_c, sel_r)
                                         captured = board.get_piece(col, row)
-                                        move = Move(
-                                            (sel_c, sel_r),
-                                            (col, row),
-                                            moving_piece,
-                                            captured,
-                                        )
-                                        board.move_piece(move)
-                                        move_history.append(move)
+                                        mv = Move((sel_c, sel_r), (col, row), moving_piece, captured)
+                                        board.move_piece(mv)
+                                        move_history.append(mv)
                                         redo_stack.clear()
 
-                                        current_side = (
-                                            Side.BLACK
-                                            if current_side == Side.RED
-                                            else Side.RED
-                                        )
+                                        current_side = Side.BLACK if current_side == Side.RED else Side.RED
                                         update_game_state_after_side_change()
                                     selected = None
                                     valid_moves = []
@@ -950,7 +1136,6 @@ def run_game():
         if state == "ai" and not game_over and current_side == AI_SIDE:
             ai_make_move()
 
-        # ================== DRAW ==================
         lang = settings.language
         lang_text = TEXT[lang]
 
@@ -976,6 +1161,8 @@ def run_game():
 
         elif state in ("pvp", "ai"):
             draw_board(screen, settings)
+            if mode is not None:
+                draw_side_avatars_on_board(screen, profiles_data, mode, ai_level_index, font_avatar)
 
             if selected is not None:
                 draw_selection(screen, *selected)
@@ -987,7 +1174,6 @@ def run_game():
                     if piece is not None:
                         draw_piece(screen, piece, c, r, font_piece, settings)
 
-            # Panel
             mode_text = lang_text["mode_pvp"] if mode == "pvp" else lang_text["mode_ai"]
             mt_surf = font_text.render(mode_text, True, (0, 0, 0))
             screen.blit(mt_surf, (panel_x, MARGIN_Y))
@@ -1014,14 +1200,14 @@ def run_game():
                 screen.blit(win_surf, (panel_x, y_info))
                 y_info += 25
 
-            # Player info + avatar
+            # Player info + small avatar on panel
             last_sel = profiles_data.get("last_selected", {})
             pvp_info = last_sel.get("pvp", {})
             ai_info = last_sel.get("ai", {})
 
             y_players = y_info + 10
+            small_size = 24
 
-                
             if mode == "pvp":
                 red_id = pvp_info.get("red_player_id", "p1")
                 black_id = pvp_info.get("black_player_id", "p2")
@@ -1029,64 +1215,61 @@ def run_game():
                 black_player = find_player(profiles_data, black_id)
 
                 if red_player:
-                    center = (panel_x + 12, y_players + 10)
-                    draw_profile_avatar(screen, red_player, center, font_avatar)
+                    center = (panel_x + small_size // 2 + 4, y_players + small_size // 2)
+                    draw_profile_avatar(screen, red_player, center, small_size, font_avatar)
                     label = t(settings, "label_red_player").format(name=red_player.get("display_name", "Player 1"))
                     color = (200, 0, 0) if current_side == Side.RED else (0, 0, 0)
                     txt = font_text.render(label, True, color)
-                    screen.blit(txt, (panel_x + 30, y_players))
-                    y_players += 24
+                    screen.blit(txt, (panel_x + small_size + 8, y_players))
+                    y_players += small_size + 6
 
                 if black_player:
-                    center = (panel_x + 12, y_players + 10)
-                    draw_profile_avatar(screen, black_player, center, font_avatar)
+                    center = (panel_x + small_size // 2 + 4, y_players + small_size // 2)
+                    draw_profile_avatar(screen, black_player, center, small_size, font_avatar)
                     label = t(settings, "label_black_player").format(name=black_player.get("display_name", "Player 2"))
                     color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
                     txt = font_text.render(label, True, color)
-                    screen.blit(txt, (panel_x + 30, y_players))
-                    y_players += 24
+                    screen.blit(txt, (panel_x + small_size + 8, y_players))
+                    y_players += small_size + 6
 
-            else:  # mode == "ai"
+            else:
                 human_id = ai_info.get("human_player_id", "p1")
                 human_player = find_player(profiles_data, human_id)
                 if human_player:
-                    center = (panel_x + 12, y_players + 10)
-                    draw_profile_avatar(screen, human_player, center, font_avatar)
+                    center = (panel_x + small_size // 2 + 4, y_players + small_size // 2)
+                    draw_profile_avatar(screen, human_player, center, small_size, font_avatar)
                     label = t(settings, "label_red_player").format(
                         name=human_player.get("display_name", "Player 1")
                     )
                     color = (200, 0, 0) if current_side == Side.RED else (0, 0, 0)
                     txt = font_text.render(label, True, color)
-                    screen.blit(txt, (panel_x + 30, y_players))
-                    y_players += 24
+                    screen.blit(txt, (panel_x + small_size + 8, y_players))
+                    y_players += small_size + 6
 
                 ai_cfg = AI_LEVELS[ai_level_index]
-                center = (panel_x + 12, y_players + 10)
-                draw_ai_avatar(screen, ai_cfg, center, font_avatar)
+                center = (panel_x + small_size // 2 + 4, y_players + small_size // 2)
+                draw_ai_avatar(screen, ai_cfg, center, small_size, font_avatar)
                 label = t(settings, "label_ai_player").format(name=ai_cfg["name"])
                 color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
                 txt = font_text.render(label, True, color)
-                screen.blit(txt, (panel_x + 30, y_players))
-                y_players += 24
+                screen.blit(txt, (panel_x + small_size + 8, y_players))
+                y_players += small_size + 6
 
             y_log_start = y_players + 10
 
-            # AI level button 
             if state == "ai":
                 level_cfg = AI_LEVELS[ai_level_index]
                 btn_ai_level.label = f"AI: {level_cfg['name']}"
                 btn_ai_level.draw(screen, font_button, enabled=True)
                 y_log_start += 30
 
-            # log moves
-            y_log = MARGIN_Y + 110
+            y_log = y_log_start
             for i, mv in enumerate(move_history[-10:]):
                 text = f"{len(move_history) - 10 + i + 1}. {mv}"
                 mv_surf = font_text.render(text, True, (0, 0, 0))
                 screen.blit(mv_surf, (panel_x, y_log))
                 y_log += 20
 
-            # Draw buttons
             btn_in_game_settings.label = lang_text["btn_settings_in_game"]
             btn_takeback.label = lang_text["btn_takeback"]
             btn_resign.label = lang_text["btn_resign"]
@@ -1155,7 +1338,7 @@ def run_game():
 
                 for p in profiles_data.get("players", []):
                     avatar_center = (start_x + 20, y + 15)
-                    draw_profile_avatar(screen, p, avatar_center, font_avatar)
+                    draw_profile_avatar(screen, p, avatar_center, 30, font_avatar)
 
                     name = p.get("display_name", "Player")
                     name_surf = font_text.render(name, True, (240, 240, 240))

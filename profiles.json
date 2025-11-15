@@ -5,25 +5,26 @@
       "id": "p1",
       "display_name": "Zhuge Liang",
       "avatar": {
-        "type": "color",
+        "type": "image",
         "color": [
           220,
           50,
           50
         ],
-        "symbol": "C"
+        "symbol": "C",
+        "path": "player1.png"
       },
       "stats": {
         "overall": {
-          "games": 21,
+          "games": 22,
           "wins": 7,
-          "losses": 13,
+          "losses": 14,
           "draws": 1
         },
         "vs_ai": {
-          "games": 18,
+          "games": 19,
           "wins": 6,
-          "losses": 12,
+          "losses": 13,
           "draws": 0
         },
         "vs_human": {
