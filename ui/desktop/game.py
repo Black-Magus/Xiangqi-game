@@ -61,6 +61,7 @@ def run_game():
     game_over = False
     winner = None
     result_recorded = False
+    replay_index = None
 
     state = "menu"
     mode = None
@@ -75,6 +76,8 @@ def run_game():
     btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 90, 30))
     btn_new_game = Button(pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 80, 90, 30))
     btn_ai_level = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 95, 160, 28))
+    btn_replay_prev = Button(pygame.Rect(panel_x, MARGIN_Y + 140, 40, 28))       # "<"
+    btn_replay_next = Button(pygame.Rect(panel_x + 50, MARGIN_Y + 140, 40, 28))  # ">"
 
     center_x = WINDOW_WIDTH // 2
     start_y = WINDOW_HEIGHT // 2 - 80
@@ -111,6 +114,7 @@ def run_game():
         game_over = False
         winner = None
         result_recorded = False
+        replay_index = None
 
     def register_result_if_needed(winner_side, is_draw=False):
         nonlocal result_recorded
@@ -121,8 +125,28 @@ def run_game():
         apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw)
         result_recorded = True
 
+    def rebuild_position_from_replay_index():
+        nonlocal current_side, in_check_side
+        if replay_index is None:
+            return
+
+        board.reset()
+        current_side = Side.RED
+        in_check_side = None
+
+        for i in range(replay_index):
+            mv = move_history[i]
+            board.move_piece(mv)
+            current_side = Side.BLACK if current_side == Side.RED else Side.RED
+
+        if board.is_in_check(current_side):
+            in_check_side = current_side
+        else:
+            in_check_side = None
+
+
     def update_game_state_after_side_change():
-        nonlocal in_check_side, game_over, winner, result_recorded
+        nonlocal in_check_side, game_over, winner, result_recorded, replay_index
         if board.is_in_check(current_side):
             in_check_side = current_side
             if not board.has_any_legal_move(current_side):
@@ -131,6 +155,7 @@ def run_game():
                     winner_side = Side.RED if current_side == Side.BLACK else Side.BLACK
                     winner = winner_side
                     register_result_if_needed(winner_side, False)
+                    replay_index = len(move_history)
         else:
             in_check_side = None
             if not result_recorded:
@@ -159,10 +184,12 @@ def run_game():
                 game_over = True
                 winner = HUMAN_SIDE
                 register_result_if_needed(HUMAN_SIDE, False)
+                replay_index = len(move_history)
             else:
                 game_over = True
                 winner = None
                 register_result_if_needed(None, True)
+                replay_index = len(move_history)
             in_check_side = None
             return
 
@@ -318,7 +345,22 @@ def run_game():
                         settings_page = "main"
                         state = "settings"
                         continue
+                    if game_over and move_history:
+                        if btn_replay_prev.is_clicked((mx, my)):
+                            if replay_index is None:
+                                replay_index = len(move_history)
+                            if replay_index > 0:
+                                replay_index -= 1
+                                rebuild_position_from_replay_index()
+                            continue
 
+                        if btn_replay_next.is_clicked((mx, my)):
+                            if replay_index is None:
+                                replay_index = len(move_history)
+                            if replay_index < len(move_history):
+                                replay_index += 1
+                                rebuild_position_from_replay_index()
+                            continue
                     if state == "ai" and btn_ai_level.is_clicked((mx, my)):
                         ai_level_index = (ai_level_index + 1) % len(AI_LEVELS)
                         continue
@@ -343,6 +385,7 @@ def run_game():
                             selected = None
                             valid_moves = []
                             register_result_if_needed(winner_side, False)
+                            replay_index = len(move_history)
                         continue
 
                     if btn_new_game.is_clicked((mx, my)):
@@ -517,6 +560,19 @@ def run_game():
                 btn_ai_level.label = f"AI: {level_cfg['name']}"
                 btn_ai_level.draw(screen, font_button, enabled=True)
                 y_log_start += 30
+
+            btn_replay_prev.label = "<"
+            btn_replay_next.label = ">"
+            if game_over and move_history:
+                current_idx = len(move_history) if replay_index is None else replay_index
+                enabled_prev = current_idx > 0
+                enabled_next = current_idx < len(move_history)
+            else:
+                enabled_prev = False
+                enabled_next = False
+
+            btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
+            btn_replay_next.draw(screen, font_button, enabled=enabled_next)
 
             y_log = y_log_start
             for i, mv in enumerate(move_history[-10:]):
