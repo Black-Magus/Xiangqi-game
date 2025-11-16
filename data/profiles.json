@@ -16,14 +16,14 @@
       },
       "stats": {
         "overall": {
-          "games": 26,
-          "wins": 10,
+          "games": 27,
+          "wins": 11,
           "losses": 15,
           "draws": 1
         },
         "vs_ai": {
-          "games": 23,
-          "wins": 9,
+          "games": 24,
+          "wins": 10,
           "losses": 14,
           "draws": 0
         },

@@ -45,6 +45,13 @@ TEXT = {
         "stats_draws": "Draws",
         "stats_winrate": "Winrate",
 
+        "paused": "Paused",
+        "main_menu": "Main menu",
+        "resume": "Resume",
+        
+        "tab_moves": "Moves",
+        "tab_captured": "Captured",
+
         "label_red_player": "RED: {name}",
         "label_black_player": "BLACK: {name}",
         "label_ai_player": "AI: {name}",
@@ -93,6 +100,13 @@ TEXT = {
         "stats_losses": "Thua",
         "stats_draws": "Hòa",
         "stats_winrate": "Tỉ lệ thắng",
+
+        "paused": "Tạm dừng",
+        "main_menu": "Màn hình chính",
+        "resume": "Tiếp tục",
+
+        "tab_moves": "Nước đi",
+        "tab_captured": "Quân ăn được",
 
         "label_red_player": "ĐỎ: {name}",
         "label_black_player": "ĐEN: {name}",

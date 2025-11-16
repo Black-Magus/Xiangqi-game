@@ -10,7 +10,7 @@ from config import (
     WINDOW_HEIGHT,
 )
 from core.engine.board import Board
-from core.engine.types import Side, Move
+from core.engine.types import Side, Move, PieceType
 
 from data.localisation import TEXT, t
 from data.themes import BOARD_THEMES, PIECE_THEMES
@@ -62,6 +62,12 @@ def run_game():
     winner = None
     result_recorded = False
     replay_index = None
+    paused = False 
+
+    # Log (replay/tabs)
+    log_active_tab = "moves"   # Moves or Captured
+    move_log_offset = 0        # index of first move currently displayed in log
+    log_box_rect_current = None  # rect of the log box for handling mouse scroll
 
     state = "menu"
     mode = None
@@ -71,7 +77,7 @@ def run_game():
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
 
-    btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 200, 190, 30))
+    btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 153, 190, 30))
     btn_takeback = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 190, 30))
     btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 90, 30))
     btn_new_game = Button(pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 80, 90, 30))
@@ -85,6 +91,22 @@ def run_game():
     btn_menu_ai = Button(pygame.Rect(center_x - 100, start_y + 50, 200, 40))
     btn_menu_settings = Button(pygame.Rect(center_x - 100, start_y + 100, 200, 40))
     btn_menu_exit = Button(pygame.Rect(center_x - 100, start_y + 150, 200, 40))
+
+    # log / captured box
+    PANEL_MIN_LOG_TOP = MARGIN_Y + 160
+    LOG_BOX_WIDTH = 220
+    LOG_BOX_HEIGHT = 260
+
+    btn_log_tab_moves = Button(pygame.Rect(panel_x, PANEL_MIN_LOG_TOP, 100, 24))
+    btn_log_tab_captured = Button(pygame.Rect(panel_x + 110, PANEL_MIN_LOG_TOP, 100, 24))
+
+
+    # Pause modal
+    pause_center_x = WINDOW_WIDTH // 2
+    pause_start_y = WINDOW_HEIGHT // 2 - 70
+    btn_pause_resume = Button(pygame.Rect(pause_center_x - 100, pause_start_y, 200, 40))
+    btn_pause_settings = Button(pygame.Rect(pause_center_x - 100, pause_start_y + 55, 200, 40))
+    btn_pause_to_menu = Button(pygame.Rect(pause_center_x - 100, pause_start_y + 110, 200, 40))
 
     settings_center_x = WINDOW_WIDTH // 2
     btn_settings_board_theme = Button(pygame.Rect(settings_center_x - 160, 220, 320, 36))
@@ -103,7 +125,7 @@ def run_game():
 
     def reset_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack
-        nonlocal in_check_side, game_over, winner, result_recorded
+        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused
         board.reset()
         current_side = Side.RED
         selected = None
@@ -115,6 +137,7 @@ def run_game():
         winner = None
         result_recorded = False
         replay_index = None
+        paused = False
 
     def register_result_if_needed(winner_side, is_draw=False):
         nonlocal result_recorded
@@ -209,7 +232,8 @@ def run_game():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
-
+            
+            # ESC key logic
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if state == "settings":
@@ -217,18 +241,35 @@ def run_game():
                             settings_page = "main"
                         else:
                             state = settings_return_state
-                    elif state != "menu":
-                        switch_to_menu()
-
+                    elif state in ("pvp", "ai"):
+                        paused = not paused
+            # Choose avatar logic
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = event.pos
                 btn = event.button
+
+                # Scroll move log with wheel
+                if btn in (4, 5) and state in ("pvp", "ai") and log_active_tab == "moves" and log_box_rect_current is not None:
+                    if log_box_rect_current.collidepoint(mx, my):
+                        try:
+                            vi = replay_index if replay_index is not None else len(move_history)
+                        except NameError:
+                            vi = len(move_history)
+
+                        box_lines = max(1, log_box_rect_current.height // 20)
+                        max_offset = max(0, vi - box_lines)
+
+                        if btn == 4:  # scroll up
+                            move_log_offset = max(0, move_log_offset - 1)
+                        elif btn == 5:  # scroll down
+                            move_log_offset = min(max_offset, move_log_offset + 1)
+                    continue
 
                 if state in ("pvp", "ai"):
                     bottom_rect = get_bottom_avatar_rect()
                     top_rect = get_top_avatar_rect()
                     clicked_avatar = False
-
+                
                     if bottom_rect.collidepoint(mx, my):
                         clicked_avatar = True
                         if mode == "pvp":
@@ -307,7 +348,7 @@ def run_game():
                     if btn_menu_exit.is_clicked((mx, my)):
                         running = False
                         continue
-
+                
                 elif state == "settings":
                     if settings_page == "main":
                         if btn_settings_board_theme.is_clicked((mx, my)):
@@ -338,13 +379,38 @@ def run_game():
                         if btn_settings_back.is_clicked((mx, my)):
                             settings_page = "main"
                             continue
-
+                # In-game state         
                 elif state in ("pvp", "ai"):
+                    # Pause modal
+                    if paused:
+                        lang = settings.language
+                        lang_text = TEXT[lang]
+
+                        if btn_pause_resume.is_clicked((mx, my)):
+                            paused = False
+                            continue
+
+                        if btn_pause_settings.is_clicked((mx, my)):
+                            settings_return_state = state
+                            settings_page = "main"
+                            paused = False
+                            state = "settings"
+                            continue
+
+                        if btn_pause_to_menu.is_clicked((mx, my)):
+                            reset_game()
+                            switch_to_menu()
+                            paused = False
+                            continue
+                        continue
+            
+                    # Setting button clicked
                     if btn_in_game_settings.is_clicked((mx, my)):
                         settings_return_state = state
                         settings_page = "main"
                         state = "settings"
                         continue
+                    # Replay 
                     if game_over and move_history:
                         if btn_replay_prev.is_clicked((mx, my)):
                             if replay_index is None:
@@ -361,10 +427,11 @@ def run_game():
                                 replay_index += 1
                                 rebuild_position_from_replay_index()
                             continue
+                    # AI level change
                     if state == "ai" and btn_ai_level.is_clicked((mx, my)):
                         ai_level_index = (ai_level_index + 1) % len(AI_LEVELS)
                         continue
-
+                    # Takeback clicked
                     if btn_takeback.is_clicked((mx, my)):
                         if move_history:
                             steps = min(2, len(move_history))
@@ -375,7 +442,7 @@ def run_game():
                                 current_side = Side.RED if current_side == Side.BLACK else Side.BLACK
                             update_game_state_after_side_change()
                         continue
-
+                    # Resign clicked
                     if btn_resign.is_clicked((mx, my)):
                         if not game_over:
                             game_over = True
@@ -387,14 +454,15 @@ def run_game():
                             register_result_if_needed(winner_side, False)
                             replay_index = len(move_history)
                         continue
-
+                    # New game clicked
                     if btn_new_game.is_clicked((mx, my)):
                         reset_game()
                         continue
-
+                    
                     if game_over:
                         continue
-
+                    
+                    # AI move turn
                     if state == "ai" and current_side == AI_SIDE:
                         continue
 
@@ -431,12 +499,14 @@ def run_game():
                                     selected = None
                                     valid_moves = []
 
-        if state == "ai" and not game_over and current_side == AI_SIDE:
+        if state == "ai" and not game_over and not paused and current_side == AI_SIDE:
             ai_make_move()
 
         lang = settings.language
         lang_text = TEXT[lang]
+        
 
+        # MENU SCREEN
         if state == "menu":
             screen.fill((40, 40, 60))
             title_surf = font_title.render(lang_text["title"], True, (250, 250, 250))
@@ -461,11 +531,23 @@ def run_game():
             draw_board(screen, settings)
             if mode is not None:
                 draw_side_avatars_on_board(screen, profiles_data, mode, ai_level_index, font_avatar)
+            if btn_log_tab_moves.is_clicked((mx, my)):
+                log_active_tab = "moves"
+                continue
+            if btn_log_tab_captured.is_clicked((mx, my)):
+                log_active_tab = "captured"
+                continue
+
+            if btn_in_game_settings.is_clicked((mx, my)):
+                settings_return_state = state
+                settings_page = "main"
+                state = "settings"
+                continue
+
 
             if selected is not None:
                 draw_selection(screen, *selected)
-                draw_move_hints(screen, valid_moves)
-
+                draw_move_hints(screen, valid_moves)            
             for r in range(BOARD_ROWS):
                 for c in range(BOARD_COLS):
                     piece = board.get_piece(c, r)
@@ -553,33 +635,149 @@ def run_game():
                 screen.blit(txt, (panel_x + small_size + 8, y_players))
                 y_players += small_size + 6
 
-            y_log_start = y_players + 10
+            panel_log_top = max(PANEL_MIN_LOG_TOP, y_players + 10)
 
+            # AI level button
             if state == "ai":
                 level_cfg = AI_LEVELS[ai_level_index]
                 btn_ai_level.label = f"AI: {level_cfg['name']}"
+
+                btn_ai_level.rect.topleft = (panel_x + 10, panel_log_top)
                 btn_ai_level.draw(screen, font_button, enabled=True)
-                y_log_start += 30
+                panel_log_top += 35
 
-            btn_replay_prev.label = "<"
-            btn_replay_next.label = ">"
-            if game_over and move_history:
-                current_idx = len(move_history) if replay_index is None else replay_index
-                enabled_prev = current_idx > 0
-                enabled_next = current_idx < len(move_history)
+            log_box_rect = pygame.Rect(panel_x, panel_log_top + 30, LOG_BOX_WIDTH, LOG_BOX_HEIGHT)
+            log_box_rect_current = log_box_rect
+
+            btn_log_tab_moves.rect = pygame.Rect(log_box_rect.x, log_box_rect.y - 26, 100, 24)
+            btn_log_tab_captured.rect = pygame.Rect(log_box_rect.x + 110, log_box_rect.y - 26, 100, 24)
+
+            # Label tabs
+            btn_log_tab_moves.label = t(settings, "tab_moves")
+            btn_log_tab_captured.label = t(settings, "tab_captured")
+
+            btn_log_tab_moves.draw(screen, font_button, enabled=(log_active_tab == "moves"))
+            btn_log_tab_captured.draw(screen, font_button, enabled=(log_active_tab == "captured"))
+
+            pygame.draw.rect(screen, (235, 235, 235), log_box_rect)
+            pygame.draw.rect(screen, (80, 80, 80), log_box_rect, 2)
+
+            inner_margin_x = 8
+            inner_margin_y = 8
+            line_height = 20
+            max_lines = max(1, (log_box_rect.height - inner_margin_y * 2) // line_height)
+
+            try:
+                view_index = replay_index if replay_index is not None else len(move_history)
+            except NameError:
+                view_index = len(move_history)
+
+            if view_index < 0:
+                view_index = 0
+            if view_index > len(move_history):
+                view_index = len(move_history)
+
+            max_offset = max(0, view_index - max_lines)
+            if move_log_offset > max_offset:
+                move_log_offset = max_offset
+            if move_log_offset < 0:
+                move_log_offset = 0
+
+            if log_active_tab == "moves":
+                start_idx = move_log_offset
+                end_idx = min(view_index, start_idx + max_lines)
+
+                y_text = log_box_rect.y + inner_margin_y
+                for i in range(start_idx, end_idx):
+                    mv = move_history[i]
+                    text_line = f"{i + 1}. {mv}"
+                    mv_surf = font_text.render(text_line, True, (0, 0, 0))
+                    screen.blit(mv_surf, (log_box_rect.x + inner_margin_x, y_text))
+                    y_text += line_height
+
+                if view_index == 0:
+                    empty_txt = "(no moves)" if settings.language == "en" else "(chưa có nước đi)"
+                    et_surf = font_text.render(empty_txt, True, (120, 120, 120))
+                    et_rect = et_surf.get_rect(center=log_box_rect.center)
+                    screen.blit(et_surf, et_rect)
+
             else:
-                enabled_prev = False
-                enabled_next = False
+                captured_by_red = []  
+                captured_by_black = []
 
-            btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
-            btn_replay_next.draw(screen, font_button, enabled=enabled_next)
+                for mv in move_history[:view_index]:
+                    if mv.captured is not None:
+                        mover_side = mv.piece.side
+                        if mover_side == Side.RED:
+                            captured_by_red.append(mv.captured)
+                        else:
+                            captured_by_black.append(mv.captured)
 
-            y_log = y_log_start
-            for i, mv in enumerate(move_history[-10:]):
-                text = f"{len(move_history) - 10 + i + 1}. {mv}"
-                mv_surf = font_text.render(text, True, (0, 0, 0))
-                screen.blit(mv_surf, (panel_x, y_log))
-                y_log += 20
+                def piece_char_for_display(piece):
+                    if piece.ptype == PieceType.GENERAL:
+                        return "帥" if piece.side == Side.RED else "將"
+                    elif piece.ptype == PieceType.ADVISOR:
+                        return "仕" if piece.side == Side.RED else "士"
+                    elif piece.ptype == PieceType.ELEPHANT:
+                        return "相" if piece.side == Side.RED else "象"
+                    elif piece.ptype == PieceType.HORSE:
+                        return "傌" if piece.side == Side.RED else "馬"
+                    elif piece.ptype == PieceType.ROOK:
+                        return "俥" if piece.side == Side.RED else "車"
+                    elif piece.ptype == PieceType.CANNON:
+                        return "炮" if piece.side == Side.RED else "砲"
+                    else:
+                        return "兵" if piece.side == Side.RED else "卒"
+
+                if settings.language == "en":
+                    red_label = "RED captured:"
+                    black_label = "BLACK captured:"
+                else:
+                    red_label = "ĐỎ ăn được:"
+                    black_label = "ĐEN ăn được:"
+
+                y_text = log_box_rect.y + inner_margin_y
+                red_surf = font_text.render(red_label, True, (160, 0, 0))
+                screen.blit(red_surf, (log_box_rect.x + inner_margin_x, y_text))
+                y_text += line_height
+
+                x_icon = log_box_rect.x + inner_margin_x
+                max_x = log_box_rect.x + log_box_rect.width - inner_margin_x
+
+                for p in captured_by_red:
+                    ch = piece_char_for_display(p)
+                    icon_surf = font_text.render(ch, True, (0, 0, 0))
+                    ir = icon_surf.get_rect(topleft=(x_icon, y_text))
+                    if ir.right > max_x:
+                        x_icon = log_box_rect.x + inner_margin_x
+                        y_text += line_height
+                        ir.topleft = (x_icon, y_text)
+                    screen.blit(icon_surf, ir.topleft)
+                    x_icon = ir.right + 5
+
+                y_text += line_height + 5
+                black_surf = font_text.render(black_label, True, (0, 0, 160))
+                screen.blit(black_surf, (log_box_rect.x + inner_margin_x, y_text))
+                y_text += line_height
+
+                x_icon = log_box_rect.x + inner_margin_x
+                for p in captured_by_black:
+                    ch = piece_char_for_display(p)
+                    icon_surf = font_text.render(ch, True, (0, 0, 0))
+                    ir = icon_surf.get_rect(topleft=(x_icon, y_text))
+                    if ir.right > max_x:
+                        x_icon = log_box_rect.x + inner_margin_x
+                        y_text += line_height
+                        ir.topleft = (x_icon, y_text)
+                    screen.blit(icon_surf, ir.topleft)
+                    x_icon = ir.right + 5
+
+                if not captured_by_red and not captured_by_black:
+                    empty_txt = "(no captured pieces)" if settings.language == "en" else "(chưa ăn được quân nào)"
+                    et_surf = font_text.render(empty_txt, True, (120, 120, 120))
+                    et_rect = et_surf.get_rect(center=log_box_rect.center)
+                    screen.blit(et_surf, et_rect)
+
 
             btn_in_game_settings.label = lang_text["btn_settings_in_game"]
             btn_takeback.label = lang_text["btn_takeback"]
@@ -591,6 +789,7 @@ def run_game():
             btn_resign.draw(screen, font_button, enabled=not game_over)
             btn_new_game.draw(screen, font_button, enabled=True)
 
+        # SETTING MENU 
         elif state == "settings":
             screen.fill((50, 40, 40))
 
@@ -684,6 +883,44 @@ def run_game():
 
                 btn_settings_back.label = t(settings, "btn_back")
                 btn_settings_back.draw(screen, font_button, enabled=True)
+        # Paused modal rendering
+        if paused:
+            # Overlay
+            overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 150))
+            screen.blit(overlay, (0, 0))
+
+            # Modal
+            modal_width = 360
+            modal_height = 220
+            modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
+            modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+
+            pygame.draw.rect(screen, (240, 240, 240), modal_rect, border_radius=8)
+            pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=8)
+
+            title_text = lang_text["paused"]
+            resume_text = lang_text["resume"]
+            to_menu_text = lang_text["main_menu"]
+
+            title_surf = font_title.render(title_text, True, (20, 20, 20))
+            title_rect = title_surf.get_rect(center=(modal_rect.centerx, modal_rect.top + 45))
+            screen.blit(title_surf, title_rect)
+
+            # Pause buttons label
+            lang_text = TEXT[settings.language]
+            btn_pause_resume.label = resume_text
+            btn_pause_settings.label = lang_text["menu_settings"]
+            btn_pause_to_menu.label = to_menu_text
+
+            btn_pause_resume.rect.center = (modal_rect.centerx, modal_rect.top + 95)
+            btn_pause_settings.rect.center = (modal_rect.centerx, modal_rect.top + 140)
+            btn_pause_to_menu.rect.center = (modal_rect.centerx, modal_rect.top + 185)
+
+            btn_pause_resume.draw(screen, font_button, enabled=True)
+            btn_pause_settings.draw(screen, font_button, enabled=True)
+            btn_pause_to_menu.draw(screen, font_button, enabled=True)
+
 
         pygame.display.flip()
 
