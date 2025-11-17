@@ -22,7 +22,7 @@ BUILTIN_AVATARS = [
     "player3.png",
 ]
 
-AVATAR_BOARD_SIZE = int(CELL_SIZE * 2.4)
+AVATAR_BOARD_SIZE = int(CELL_SIZE * 1.3)
 
 _avatar_cache = {}
 

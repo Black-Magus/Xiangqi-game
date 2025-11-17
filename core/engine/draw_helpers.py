@@ -1,6 +1,6 @@
 import pygame
 
-from config import BOARD_COLS, BOARD_ROWS, CELL_SIZE, MARGIN_X, MARGIN_Y
+from config import BOARD_COLS, BOARD_ROWS, CELL_SIZE, MARGIN_X, MARGIN_Y, BOARD_OFFSET_Y
 from core.engine.types import Side, PieceType
 
 from data.themes import BOARD_THEMES, PIECE_THEMES
@@ -9,15 +9,17 @@ from core.profiles_manager import find_player
 from core.engine.ai_engine import AI_LEVELS
 from core.settings_manager import Settings
 
+BOARD_TOP = MARGIN_Y + BOARD_OFFSET_Y
+
 def board_to_screen(col, row):
     x = MARGIN_X + col * CELL_SIZE
-    y = MARGIN_Y + row * CELL_SIZE
+    y = BOARD_TOP + row * CELL_SIZE
     return x, y
 
 
 def screen_to_board(x, y):
     col = (x - MARGIN_X + CELL_SIZE // 2) // CELL_SIZE
-    row = (y - MARGIN_Y + CELL_SIZE // 2) // CELL_SIZE
+    row = (y - BOARD_TOP + CELL_SIZE // 2) // CELL_SIZE
     if 0 <= col < BOARD_COLS and 0 <= row < BOARD_ROWS:
         return int(col), int(row)
     return None, None
@@ -36,7 +38,7 @@ def draw_board(surface, settings: Settings):
         board_h = (BOARD_ROWS - 1) * CELL_SIZE
         # scale ảnh cho vừa vùng bàn
         scaled = pygame.transform.smoothscale(img, (board_w, board_h))
-        surface.blit(scaled, (MARGIN_X, MARGIN_Y))
+        surface.blit(scaled, (MARGIN_X, BOARD_TOP))
         return
 
     line_color = theme["line_color"]
@@ -44,17 +46,17 @@ def draw_board(surface, settings: Settings):
 
     for c in range(BOARD_COLS):
         x = MARGIN_X + c * CELL_SIZE
-        y1 = MARGIN_Y
-        y2 = MARGIN_Y + (BOARD_ROWS - 1) * CELL_SIZE
+        y1 = BOARD_TOP
+        y2 = BOARD_TOP + (BOARD_ROWS - 1) * CELL_SIZE
         pygame.draw.line(surface, line_color, (x, y1), (x, y2), 2)
 
     for r in range(BOARD_ROWS):
-        y = MARGIN_Y + r * CELL_SIZE
+        y = BOARD_TOP + r * CELL_SIZE
         x1 = MARGIN_X
         x2 = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
         pygame.draw.line(surface, line_color, (x1, y), (x2, y), 2)
 
-    river_y_top = MARGIN_Y + 4 * CELL_SIZE
+    river_y_top = BOARD_TOP + 4 * CELL_SIZE
     river_rect = pygame.Rect(
         MARGIN_X,
         river_y_top,
@@ -154,16 +156,16 @@ def draw_ai_avatar(surface, ai_level_cfg, center, size, font_avatar):
 
 def get_bottom_avatar_rect():
     rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
-    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE // 2
-    cy = MARGIN_Y + (BOARD_ROWS - 1) * CELL_SIZE + CELL_SIZE // 2
+    cx = MARGIN_X - AVATAR_BOARD_SIZE // 2 + 90
+    cy = BOARD_TOP + (BOARD_ROWS - 1) * CELL_SIZE + CELL_SIZE // 2 + 60
     rect.center = (cx, cy)
     return rect
 
 
 def get_top_avatar_rect():
     rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
-    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE // 2
-    cy = MARGIN_Y + CELL_SIZE // 2
+    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE + AVATAR_BOARD_SIZE // 2 - 90
+    cy = BOARD_TOP + CELL_SIZE // 2 - 115
     rect.center = (cx, cy)
     return rect
 

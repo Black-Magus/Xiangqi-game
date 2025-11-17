@@ -12,19 +12,19 @@
           50
         ],
         "symbol": "C",
-        "path": "player3.png"
+        "path": "player1.png"
       },
       "stats": {
         "overall": {
-          "games": 42,
+          "games": 43,
           "wins": 16,
-          "losses": 25,
+          "losses": 26,
           "draws": 1
         },
         "vs_ai": {
-          "games": 38,
+          "games": 39,
           "wins": 14,
-          "losses": 24,
+          "losses": 25,
           "draws": 0
         },
         "vs_human": {

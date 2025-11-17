@@ -52,6 +52,8 @@ def run_game():
         return resolution_ratios.get(key, resolution_ratios["fit"])
 
     target_ratio = ratio_value(settings.resolution_ratio)
+    screen_info = pygame.display.Info()
+    max_screen_w, max_screen_h = screen_info.current_w, screen_info.current_h
 
     def compute_logical_width():
         return max(base_width, int(round(base_height * target_ratio)))
@@ -59,16 +61,24 @@ def run_game():
     logical_width = compute_logical_width()
 
     def lock_size_to_ratio(width, height):
-        width_based_height = max(400, int(round(width / target_ratio)))
-        height_based_width = max(400, int(round(height * target_ratio)))
+        width = min(max_screen_w, width)
+        height = min(max_screen_h, height)
+        width_based_height = int(round(width / target_ratio))
+        height_based_width = int(round(height * target_ratio))
         if abs(width_based_height - height) <= abs(height_based_width - width):
-            return width, width_based_height
-        return height_based_width, height
+            result_w, result_h = width, width_based_height
+        else:
+            result_w, result_h = height_based_width, height
+        result_w = min(max_screen_w, max(400, result_w))
+        result_h = min(max_screen_h, max(400, result_h))
+        return result_w, result_h
 
     def initial_window_size():
         width = int(round(base_height * target_ratio))
         height = base_height
-        return max(400, width), max(400, height)
+        width = min(max_screen_w, max(400, width))
+        height = min(max_screen_h, max(400, height))
+        return width, height
 
     window_mode_size = initial_window_size()
     window_flags = 0
