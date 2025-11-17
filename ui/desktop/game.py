@@ -143,6 +143,7 @@ def run_game():
     state = "menu"
     mode = None
     ai_level_index = 1
+    ai_match_started = False
     settings_return_state = "menu"
     settings_page = "main"
 
@@ -153,6 +154,7 @@ def run_game():
     btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 90, 30))
     btn_new_game = Button(pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 80, 90, 30))
     btn_ai_level = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 95, 160, 28))
+    btn_start_match = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 130, 160, 28))
     btn_replay_prev = Button(pygame.Rect(panel_x, MARGIN_Y + 140, 40, 28))       # "<"
     btn_replay_next = Button(pygame.Rect(panel_x + 50, MARGIN_Y + 140, 40, 28))  # ">"
 
@@ -348,13 +350,13 @@ def run_game():
     def apply_setting_selection(key, value):
         nonlocal window_surface, window_mode_size, window_flags, logical_width, target_ratio
 
-        if key == "board_theme" and BOARD_THEMES:
+        if key == "board_theme":
             settings.board_theme_index = int(value) % len(BOARD_THEMES)
         elif key == "piece_body" and PIECE_BODY_THEMES:
             settings.piece_body_theme_index = int(value) % len(PIECE_BODY_THEMES)
         elif key == "piece_symbols" and PIECE_SYMBOL_SETS:
             settings.piece_symbol_set_index = int(value) % len(PIECE_SYMBOL_SETS)
-        elif key == "piece_symbol_color" and PIECE_THEMES:
+        elif key == "piece_symbol_color":
             settings.piece_theme_index = int(value) % len(PIECE_THEMES)
         elif key == "display_mode":
             settings.display_mode = value
@@ -384,7 +386,7 @@ def run_game():
 
     def reset_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack
-        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused
+        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started
         board.reset()
         current_side = Side.RED
         selected = None
@@ -397,6 +399,7 @@ def run_game():
         result_recorded = False
         replay_index = None
         paused = False
+        ai_match_started = False
 
     def register_result_if_needed(winner_side, is_draw=False):
         nonlocal result_recorded
@@ -445,7 +448,7 @@ def run_game():
                 winner = None
 
     def switch_to_menu():
-        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded
+        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded, ai_match_started
         state = "menu"
         selected = None
         valid_moves = []
@@ -453,12 +456,13 @@ def run_game():
         game_over = False
         winner = None
         result_recorded = False
+        ai_match_started = False
 
     def ai_make_move():
         nonlocal current_side, move_history, redo_stack, game_over, winner
         nonlocal in_check_side, selected, valid_moves
         nonlocal log_follow_latest
-        if game_over or current_side != AI_SIDE:
+        if game_over or current_side != AI_SIDE or not ai_match_started:
             return
         level_cfg = AI_LEVELS[ai_level_index]
         mv = choose_ai_move(board, level_cfg, AI_SIDE)
@@ -690,7 +694,9 @@ def run_game():
                             paused = False
                             continue
                         continue
-            
+
+                    ai_input_locked = state == "ai" and not ai_match_started
+
                     # Setting button clicked
                     if btn_in_game_settings.is_clicked((mx, my)):
                         settings_return_state = state
@@ -715,12 +721,18 @@ def run_game():
                                 replay_index += 1
                                 rebuild_position_from_replay_index()
                             continue
+                    # Start match (AI only)
+                    if state == "ai" and not ai_match_started and btn_start_match.is_clicked((mx, my)):
+                        ai_match_started = True
+                        continue
                     # AI level change
-                    if state == "ai" and btn_ai_level.is_clicked((mx, my)):
+                    if state == "ai" and not ai_match_started and btn_ai_level.is_clicked((mx, my)):
                         ai_level_index = (ai_level_index + 1) % len(AI_LEVELS)
                         continue
                     # Takeback clicked
                     if btn_takeback.is_clicked((mx, my)):
+                        if ai_input_locked:
+                            continue
                         if move_history:
                             steps = min(2, len(move_history))
                             for _ in range(steps):
@@ -733,6 +745,8 @@ def run_game():
                         continue
                     # Resign clicked
                     if btn_resign.is_clicked((mx, my)):
+                        if ai_input_locked:
+                            continue
                         if not game_over:
                             game_over = True
                             winner_side = Side.RED if current_side == Side.BLACK else Side.BLACK
@@ -746,6 +760,9 @@ def run_game():
                     # New game clicked
                     if btn_new_game.is_clicked((mx, my)):
                         reset_game()
+                        continue
+
+                    if state == "ai" and not ai_match_started:
                         continue
                     
                     if game_over:
@@ -789,7 +806,7 @@ def run_game():
                                     selected = None
                                     valid_moves = []
 
-        if state == "ai" and not game_over and not paused and current_side == AI_SIDE:
+        if state == "ai" and ai_match_started and not game_over and not paused and current_side == AI_SIDE:
             ai_make_move()
 
         lang = settings.language
@@ -872,6 +889,11 @@ def run_game():
                 screen.blit(win_surf, (panel_x, y_info))
                 y_info += 25
 
+            if mode == "ai" and not ai_match_started:
+                pending_surf = font_text.render(lang_text["match_not_started"], True, (60, 60, 60))
+                screen.blit(pending_surf, (panel_x, y_info))
+                y_info += 22
+
             last_sel = profiles_data.get("last_selected", {})
             pvp_info = last_sel.get("pvp", {})
             ai_info = last_sel.get("ai", {})
@@ -928,14 +950,32 @@ def run_game():
 
             panel_log_top = max(PANEL_MIN_LOG_TOP, y_players + 10)
 
-            # AI level button
+            # AI controls
             if state == "ai":
                 level_cfg = AI_LEVELS[ai_level_index]
                 btn_ai_level.label = f"AI: {level_cfg['name']}"
 
                 btn_ai_level.rect.topleft = (panel_x + 10, panel_log_top)
-                btn_ai_level.draw(screen, font_button, enabled=True)
+                btn_ai_level.draw(screen, font_button, enabled=not ai_match_started)
                 panel_log_top += 35
+
+                btn_start_match.label = lang_text["match_started"] if ai_match_started else lang_text["btn_start_match"]
+                btn_start_match.rect.topleft = (panel_x + 10, panel_log_top)
+                btn_start_match.draw(screen, font_button, enabled=not ai_match_started)
+                panel_log_top += 35
+
+            btn_replay_prev.label = "<"
+            btn_replay_next.label = ">"
+            if game_over and move_history:
+                current_idx = len(move_history) if replay_index is None else replay_index
+                enabled_prev = current_idx > 0
+                enabled_next = current_idx < len(move_history)
+            else:
+                enabled_prev = False
+                enabled_next = False
+
+            btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
+            btn_replay_next.draw(screen, font_button, enabled=enabled_next)
 
             log_box_rect = pygame.Rect(panel_x, panel_log_top + 30, LOG_BOX_WIDTH, LOG_BOX_HEIGHT)
             log_box_rect_current = log_box_rect
@@ -1219,7 +1259,8 @@ def run_game():
             btn_takeback.draw(screen, font_button, enabled=bool(move_history))
             btn_resign.draw(screen, font_button, enabled=not game_over)
             btn_new_game.draw(screen, font_button, enabled=True)
-
+            btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
+            btn_replay_next.draw(screen, font_button, enabled=enabled_next)
         # SETTING MENU 
         elif state == "settings":
             screen.fill((50, 40, 40))

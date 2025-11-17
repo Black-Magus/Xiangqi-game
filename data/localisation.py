@@ -15,7 +15,10 @@ TEXT = {
         "btn_takeback": "Takeback",
         "btn_resign": "Resign",
         "btn_new_game": "New game",
+        "btn_start_match": "Start match",
         "btn_settings_in_game": "Settings",
+        "match_started": "Match started",
+        "match_not_started": "Press Start match to begin",
 
         "mode_pvp": "Mode: PvP",
         "mode_ai": "Mode: vs AI",
@@ -92,7 +95,10 @@ TEXT = {
         "btn_takeback": "Xin đi lại",
         "btn_resign": "Đầu hàng",
         "btn_new_game": "Ván mới",
+        "btn_start_match": "Bắt đầu ván",
         "btn_settings_in_game": "Cài đặt",
+        "match_started": "Ván đã bắt đầu",
+        "match_not_started": "Nhấn Bắt đầu ván để chơi",
 
         "mode_pvp": "Chế độ: 2 người",
         "mode_ai": "Chế độ: Chơi với máy",
