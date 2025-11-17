@@ -64,7 +64,7 @@ def run_game():
         return max(400, width), max(400, height)
 
     window_mode_size = initial_window_size()
-    window_flags = pygame.FULLSCREEN if settings.display_mode == "fullscreen" else pygame.RESIZABLE
+    window_flags = pygame.FULLSCREEN if settings.display_mode == "fullscreen" else (pygame.RESIZABLE | pygame.DOUBLEBUF)
 
     if settings.display_mode == "fullscreen":
         window_surface = pygame.display.set_mode((0, 0), window_flags)
@@ -185,10 +185,10 @@ def run_game():
     def apply_display_mode():
         nonlocal window_surface, window_mode_size, window_flags
         if settings.display_mode == "fullscreen":
-            window_flags = pygame.FULLSCREEN
+            window_flags = pygame.FULLSCREEN | pygame.DOUBLEBUF
             window_surface = pygame.display.set_mode((0, 0), window_flags)
         else:
-            window_flags = pygame.RESIZABLE
+            window_flags = pygame.RESIZABLE | pygame.DOUBLEBUF
             window_mode_size = lock_size_to_ratio(*window_mode_size)
             window_surface = pygame.display.set_mode(window_mode_size, window_flags)
         recompute_render_scale()
@@ -326,8 +326,9 @@ def run_game():
                     elif state in ("pvp", "ai"):
                         paused = not paused
             elif event.type == pygame.VIDEORESIZE and settings.display_mode == "window":
-                window_mode_size = lock_size_to_ratio(event.w, event.h)
-                window_surface = pygame.display.set_mode(window_mode_size, window_flags)
+                # Avoid recreating the window surface on every resize step to reduce flicker.
+                window_mode_size = (event.w, event.h)
+                window_surface = pygame.display.get_surface()
                 recompute_render_scale()
             # Choose avatar logic
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -1193,11 +1194,16 @@ def run_game():
             btn_pause_to_menu.draw(screen, font_button, enabled=True)
 
 
-        fill_color = screen.get_at((0, 0))[:3] if screen.get_locked() is False else (0, 0, 0)
+        fill_color = (0, 0, 0)
+        if not screen.get_locked():
+            try:
+                fill_color = screen.get_at((0, 0))[:3]
+            except Exception:
+                fill_color = (0, 0, 0)
         frame_surface.fill(fill_color)
         pad_x = (logical_width - base_width) // 2
         frame_surface.blit(screen, (pad_x, 0))
-        window_surface.fill((0, 0, 0))
+        window_surface.fill(fill_color)
         scaled_surface = pygame.transform.smoothscale(frame_surface, render_size)
         window_surface.blit(scaled_surface, render_offset)
         pygame.display.flip()
