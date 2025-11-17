@@ -40,9 +40,64 @@ def run_game():
     settings = load_settings()
     profiles_data = load_profiles()
 
-    flags = pygame.FULLSCREEN if settings.display_mode == "fullscreen" else 0
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), flags)
+    base_width = WINDOW_WIDTH
+    base_height = WINDOW_HEIGHT
+    base_ratio = base_width / base_height
+    resolution_ratios = {
+        "fit": base_ratio,
+        "wide": 16 / 9,
+    }
+
+    def ratio_value(key: str) -> float:
+        return resolution_ratios.get(key, resolution_ratios["fit"])
+
+    target_ratio = ratio_value(settings.resolution_ratio)
+
+    def compute_logical_width():
+        return max(base_width, int(round(base_height * target_ratio)))
+
+    logical_width = compute_logical_width()
+
+    def initial_window_size():
+        width = int(round(base_height * target_ratio))
+        height = base_height
+        return max(400, width), max(400, height)
+
+    window_mode_size = initial_window_size()
+    window_flags = pygame.FULLSCREEN if settings.display_mode == "fullscreen" else pygame.RESIZABLE
+
+    if settings.display_mode == "fullscreen":
+        window_surface = pygame.display.set_mode((0, 0), window_flags)
+    else:
+        window_surface = pygame.display.set_mode(window_mode_size, window_flags)
     pygame.display.set_caption("Xiangqi - Cờ Tướng")
+
+    screen = pygame.Surface((base_width, base_height), pygame.SRCALPHA).convert_alpha()
+
+    render_scale = 1.0
+    render_size = (base_width, base_height)
+    render_offset = (0, 0)
+    frame_surface = pygame.Surface((logical_width, base_height), pygame.SRCALPHA).convert_alpha()
+
+    def refresh_render_targets():
+        nonlocal frame_surface
+        frame_surface = pygame.Surface((logical_width, base_height), pygame.SRCALPHA).convert_alpha()
+        recompute_render_scale()
+
+    def recompute_render_scale():
+        nonlocal render_scale, render_size, render_offset
+        win_w, win_h = window_surface.get_size()
+        render_scale = min(win_w / logical_width, win_h / base_height)
+        render_size = (
+            max(1, int(logical_width * render_scale)),
+            max(1, int(base_height * render_scale)),
+        )
+        render_offset = (
+            (win_w - render_size[0]) // 2,
+            (win_h - render_size[1]) // 2,
+        )
+
+    recompute_render_scale()
 
     clock = pygame.time.Clock()
     font_piece = pygame.font.SysFont("SimHei", 28)
@@ -115,16 +170,38 @@ def run_game():
     btn_settings_piece_icons = Button(pygame.Rect(settings_center_x - 160, 290, 320, 36))
     btn_settings_piece_theme = Button(pygame.Rect(settings_center_x - 160, 335, 320, 36))  
     btn_settings_display = Button(pygame.Rect(settings_center_x - 160, 380, 320, 36))
-    btn_settings_language = Button(pygame.Rect(settings_center_x - 160, 425, 320, 36))
-    btn_settings_player_stats = Button(pygame.Rect(settings_center_x - 160, 470, 320, 36))
+    btn_settings_resolution = Button(pygame.Rect(settings_center_x - 160, 425, 320, 36))
+    btn_settings_language = Button(pygame.Rect(settings_center_x - 160, 470, 320, 36))
+    btn_settings_player_stats = Button(pygame.Rect(settings_center_x - 160, 515, 320, 36))
     btn_settings_back = Button(pygame.Rect(settings_center_x - 80, WINDOW_HEIGHT - 100, 160, 40))
 
+    def lock_size_to_ratio(width, height):
+        width_based_height = max(400, int(round(width / target_ratio)))
+        height_based_width = max(400, int(round(height * target_ratio)))
+        if abs(width_based_height - height) <= abs(height_based_width - width):
+            return width, width_based_height
+        return height_based_width, height
+
     def apply_display_mode():
-        nonlocal screen
+        nonlocal window_surface, window_mode_size, window_flags
         if settings.display_mode == "fullscreen":
-            screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.FULLSCREEN)
+            window_flags = pygame.FULLSCREEN
+            window_surface = pygame.display.set_mode((0, 0), window_flags)
         else:
-            screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+            window_flags = pygame.RESIZABLE
+            window_mode_size = lock_size_to_ratio(*window_mode_size)
+            window_surface = pygame.display.set_mode(window_mode_size, window_flags)
+        recompute_render_scale()
+
+    def to_game_coords(pos):
+        if render_scale <= 0:
+            return 0, 0, False
+        lx = (pos[0] - render_offset[0]) / render_scale
+        ly = (pos[1] - render_offset[1]) / render_scale
+        logical_pad_x = (logical_width - base_width) / 2
+        gx = lx - logical_pad_x
+        inside = 0 <= gx <= base_width and 0 <= ly <= base_height
+        return int(gx), int(ly), inside
 
     def reset_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack
@@ -248,9 +325,15 @@ def run_game():
                             state = settings_return_state
                     elif state in ("pvp", "ai"):
                         paused = not paused
+            elif event.type == pygame.VIDEORESIZE and settings.display_mode == "window":
+                window_mode_size = lock_size_to_ratio(event.w, event.h)
+                window_surface = pygame.display.set_mode(window_mode_size, window_flags)
+                recompute_render_scale()
             # Choose avatar logic
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = event.pos
+                mx, my, inside_game = to_game_coords(event.pos)
+                if not inside_game:
+                    continue
                 btn = event.button
 
                 # Scroll move log with wheel
@@ -378,6 +461,16 @@ def run_game():
                         if btn_settings_display.is_clicked((mx, my)):
                             settings.display_mode = "fullscreen" if settings.display_mode == "window" else "window"
                             apply_display_mode()
+                            save_settings(settings)
+                            continue
+                        if btn_settings_resolution.is_clicked((mx, my)):
+                            settings.resolution_ratio = "wide" if settings.resolution_ratio == "fit" else "fit"
+                            target_ratio = ratio_value(settings.resolution_ratio)
+                            logical_width = compute_logical_width()
+                            window_mode_size = lock_size_to_ratio(*window_mode_size)
+                            if settings.display_mode == "window":
+                                window_surface = pygame.display.set_mode(window_mode_size, window_flags)
+                            refresh_render_targets()
                             save_settings(settings)
                             continue
                         if btn_settings_language.is_clicked((mx, my)):
@@ -976,6 +1069,9 @@ def run_game():
                 mode_label_key = "display_window" if settings.display_mode == "window" else "display_fullscreen"
                 mode_label_text = t(settings, mode_label_key)
                 display_label = t(settings, "settings_display").format(mode=mode_label_text)
+                ratio_label_key = "ratio_fit" if settings.resolution_ratio == "fit" else "ratio_wide"
+                ratio_label_text = t(settings, ratio_label_key)
+                resolution_label = t(settings, "settings_resolution_ratio").format(mode=ratio_label_text)
 
                 if settings.language == "en":
                     lang_label = "Language: English"
@@ -988,6 +1084,7 @@ def run_game():
                 btn_settings_piece_icons.label = icons_label
                 btn_settings_piece_theme.label = symbol_color_label
                 btn_settings_display.label = display_label
+                btn_settings_resolution.label = resolution_label
                 btn_settings_language.label = lang_label
                 btn_settings_player_stats.label = t(settings, "settings_player_stats")
                 btn_settings_back.label = t(settings, "btn_back")
@@ -998,6 +1095,7 @@ def run_game():
                 btn_settings_piece_icons.draw(screen, font_button, enabled=True)
                 btn_settings_piece_theme.draw(screen, font_button, enabled=True)
                 btn_settings_display.draw(screen, font_button, enabled=True)
+                btn_settings_resolution.draw(screen, font_button, enabled=True)
                 btn_settings_language.draw(screen, font_button, enabled=True)
                 btn_settings_player_stats.draw(screen, font_button, enabled=True)
                 btn_settings_back.draw(screen, font_button, enabled=True)
@@ -1095,6 +1193,13 @@ def run_game():
             btn_pause_to_menu.draw(screen, font_button, enabled=True)
 
 
+        fill_color = screen.get_at((0, 0))[:3] if screen.get_locked() is False else (0, 0, 0)
+        frame_surface.fill(fill_color)
+        pad_x = (logical_width - base_width) // 2
+        frame_surface.blit(screen, (pad_x, 0))
+        window_surface.fill((0, 0, 0))
+        scaled_surface = pygame.transform.smoothscale(frame_surface, render_size)
+        window_surface.blit(scaled_surface, render_offset)
         pygame.display.flip()
 
     save_settings(settings)

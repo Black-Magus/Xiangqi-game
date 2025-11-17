@@ -15,6 +15,7 @@ class Settings:
         self.language = "vi"          # "vi" or "en"
         self.piece_body_theme_index = 0
         self.piece_symbol_set_index = 0
+        self.resolution_ratio = "fit"  # "fit" or "wide"
 
 
 
@@ -35,6 +36,7 @@ def settings_to_dict(settings: Settings) -> Dict[str, Any]:
         "language": settings.language,
         "piece_body_theme_index": settings.piece_body_theme_index,
         "piece_symbol_set_index": settings.piece_symbol_set_index,
+        "resolution_ratio": settings.resolution_ratio,
     }
 
 
@@ -62,6 +64,8 @@ def load_settings() -> Settings:
             s.piece_body_theme_index = int(data["piece_body_theme_index"]) % len(PIECE_BODY_THEMES)
         if "piece_symbol_set_index" in data and PIECE_SYMBOL_SETS:
             s.piece_symbol_set_index = int(data["piece_symbol_set_index"]) % len(PIECE_SYMBOL_SETS)
+        if data.get("resolution_ratio") in ("fit", "wide"):
+            s.resolution_ratio = data["resolution_ratio"]
 
     return s
 

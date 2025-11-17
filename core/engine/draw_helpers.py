@@ -4,7 +4,7 @@ from config import BOARD_COLS, BOARD_ROWS, CELL_SIZE, MARGIN_X, MARGIN_Y
 from core.engine.types import Side, PieceType
 
 from data.themes import BOARD_THEMES, PIECE_THEMES
-from data.avatar_assets import AVATAR_BOARD_SIZE, get_piece_sprite, load_avatar_image
+from data.avatar_assets import AVATAR_BOARD_SIZE, get_piece_sprite, load_avatar_image, load_board_image
 from core.profiles_manager import find_player
 from core.engine.ai_engine import AI_LEVELS
 from core.settings_manager import Settings
@@ -23,13 +23,24 @@ def screen_to_board(x, y):
     return None, None
 
 
-def draw_board(surface, settings):
+def draw_board(surface, settings: Settings):
     theme = BOARD_THEMES[settings.board_theme_index]
-    bg_color = theme["bg_color"]
+
+    bg_color = theme.get("bg_color", (30, 30, 30))
+    surface.fill(bg_color)
+
+    img = load_board_image(theme)
+    if img is not None:
+        # vùng bàn cờ
+        board_w = (BOARD_COLS - 1) * CELL_SIZE
+        board_h = (BOARD_ROWS - 1) * CELL_SIZE
+        # scale ảnh cho vừa vùng bàn
+        scaled = pygame.transform.smoothscale(img, (board_w, board_h))
+        surface.blit(scaled, (MARGIN_X, MARGIN_Y))
+        return
+
     line_color = theme["line_color"]
     river_color = theme["river_color"]
-
-    surface.fill(bg_color)
 
     for c in range(BOARD_COLS):
         x = MARGIN_X + c * CELL_SIZE

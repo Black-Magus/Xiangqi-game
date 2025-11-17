@@ -11,6 +11,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
 ASSETS_DIR = os.path.join(PROJECT_ROOT, "assets")
 AVATAR_DIR = os.path.join(ASSETS_DIR, "avatars")
+BOARD_IMAGE_DIR = os.path.join(ASSETS_DIR, "boards")
+
+_board_image_cache = {}
+
 
 BUILTIN_AVATARS = [
     "player1.png",
@@ -186,3 +190,21 @@ def get_piece_sprite(piece, settings: Settings, size: int):
 
     _piece_sprite_cache[cache_key] = surf
     return surf
+
+def load_board_image(theme):
+    path_rel = theme.get("image")
+    if not path_rel:
+        return None
+    key = path_rel
+    if key in _board_image_cache:
+        return _board_image_cache[key]
+    full_path = os.path.join(BOARD_IMAGE_DIR, path_rel)
+    if not os.path.exists(full_path):
+        return None
+    try:
+        img = pygame.image.load(full_path).convert_alpha()
+    except Exception:
+        return None
+    _board_image_cache[key] = img
+    return img
+

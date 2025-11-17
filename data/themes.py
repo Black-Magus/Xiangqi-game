@@ -5,6 +5,7 @@ BOARD_THEMES = [
         "bg_color": (230, 200, 150),
         "line_color": (80, 40, 10),
         "river_color": (220, 210, 170),
+        # không có image nghĩa là vẽ bằng line như cũ
     },
     {
         "key": "dark_wood",
@@ -19,6 +20,12 @@ BOARD_THEMES = [
         "bg_color": (200, 220, 200),
         "line_color": (40, 80, 40),
         "river_color": (180, 210, 190),
+    },
+    {
+        "key": "classic_png",
+        "name": {"en": "Classic PNG", "vi": "Bàn PNG cổ điển"},
+        "bg_color": (0, 0, 0),  
+        "image": "classic.png",  
     },
 ]
 
