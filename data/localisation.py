@@ -31,6 +31,9 @@ TEXT = {
         "settings_board_theme": "Board: {name}",
         "settings_piece_theme": "Pieces: {name}",
         "settings_display": "Display: {mode}",
+        "settings_piece_body": "Piece body: {name}",
+        "settings_piece_icons": "Piece icons: {name}",
+        "settings_piece_symbol_color": "Symbol color: {name}",
         "display_window": "Window",
         "display_fullscreen": "Fullscreen",
 
@@ -88,6 +91,10 @@ TEXT = {
         "settings_board_theme": "Bàn cờ: {name}",
         "settings_piece_theme": "Quân cờ: {name}",
         "settings_display": "Hiển thị: {mode}",
+        "settings_piece_body": "Nền quân: {name}",
+        "settings_piece_icons": "Biểu tượng: {name}",
+        "settings_piece_symbol_color": "Màu biểu tượng: {name}",
+
         "display_window": "Cửa sổ",
         "display_fullscreen": "Toàn màn hình",
         "settings_player_stats": "Thống kê người chơi",
@@ -113,6 +120,52 @@ TEXT = {
         "label_ai_player": "AI: {name}",
     },
 }
+
+PIECE_BODY_THEMES = [
+    {
+        "key": "flat_light",
+        "name": {"en": "Flat light", "vi": "Phẳng sáng"},
+        "folder": "classic",
+        "red_file": "flat_light_red.png",
+        "black_file": "flat_light_black.png",
+    },
+    {
+        "key": "flat_dark",
+        "name": {"en": "Flat dark", "vi": "Phẳng tối"},
+        "folder": "classic",
+        "red_file": "flat_dark_red.png",
+        "black_file": "flat_dark_black.png",
+    },
+]
+
+PIECE_SYMBOL_SETS = [
+    {
+        "key": "hanzi_classic",
+        "name": {"en": "Chinese classic", "vi": "Hán cổ điển"},
+        "folder": "hanzi_classic",
+        "files": {
+            "red": {
+                "general": "red_general.png",
+                "advisor": "red_advisor.png",
+                "elephant": "red_elephant.png",
+                "horse":   "red_horse.png",
+                "rook":    "red_rook.png",
+                "cannon":  "red_cannon.png",
+                "soldier": "red_soldier.png",
+            },
+            "black": {
+                "general": "black_general.png",
+                "advisor": "black_advisor.png",
+                "elephant": "black_elephant.png",
+                "horse":   "black_horse.png",
+                "rook":    "black_rook.png",
+                "cannon":  "black_cannon.png",
+                "soldier": "black_soldier.png",
+            },
+        },
+    },
+]
+
 
 
 def t(settings, key: str) -> str:

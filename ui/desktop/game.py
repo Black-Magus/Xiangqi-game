@@ -12,10 +12,10 @@ from config import (
 from core.engine.board import Board
 from core.engine.types import Side, Move, PieceType
 
-from data.localisation import TEXT, t
+from data.localisation import TEXT, PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, t
 from data.themes import BOARD_THEMES, PIECE_THEMES
 from core.settings_manager import Settings, load_settings, save_settings
-from data.avatar_assets import BUILTIN_AVATARS
+from data.avatar_assets import BUILTIN_AVATARS, get_piece_sprite
 from core.profiles_manager import load_profiles, save_profiles, find_player, apply_game_result_to_profiles
 from core.engine.constants import AI_SIDE, HUMAN_SIDE
 from core.engine.ai_engine import AI_LEVELS, choose_ai_move
@@ -68,6 +68,7 @@ def run_game():
     log_active_tab = "moves"   # Moves or Captured
     move_log_offset = 0        # index of first move currently displayed in log
     log_box_rect_current = None  # rect of the log box for handling mouse scroll
+    log_follow_latest = True
 
     state = "menu"
     mode = None
@@ -109,11 +110,13 @@ def run_game():
     btn_pause_to_menu = Button(pygame.Rect(pause_center_x - 100, pause_start_y + 110, 200, 40))
 
     settings_center_x = WINDOW_WIDTH // 2
-    btn_settings_board_theme = Button(pygame.Rect(settings_center_x - 160, 220, 320, 36))
-    btn_settings_piece_theme = Button(pygame.Rect(settings_center_x - 160, 270, 320, 36))
-    btn_settings_display = Button(pygame.Rect(settings_center_x - 160, 320, 320, 36))
-    btn_settings_language = Button(pygame.Rect(settings_center_x - 160, 370, 320, 36))
-    btn_settings_player_stats = Button(pygame.Rect(settings_center_x - 160, 420, 320, 36))
+    btn_settings_board_theme = Button(pygame.Rect(settings_center_x - 160, 200, 320, 36))
+    btn_settings_piece_body = Button(pygame.Rect(settings_center_x - 160, 245, 320, 36))
+    btn_settings_piece_icons = Button(pygame.Rect(settings_center_x - 160, 290, 320, 36))
+    btn_settings_piece_theme = Button(pygame.Rect(settings_center_x - 160, 335, 320, 36))  
+    btn_settings_display = Button(pygame.Rect(settings_center_x - 160, 380, 320, 36))
+    btn_settings_language = Button(pygame.Rect(settings_center_x - 160, 425, 320, 36))
+    btn_settings_player_stats = Button(pygame.Rect(settings_center_x - 160, 470, 320, 36))
     btn_settings_back = Button(pygame.Rect(settings_center_x - 80, WINDOW_HEIGHT - 100, 160, 40))
 
     def apply_display_mode():
@@ -198,6 +201,7 @@ def run_game():
     def ai_make_move():
         nonlocal current_side, move_history, redo_stack, game_over, winner
         nonlocal in_check_side, selected, valid_moves
+        nonlocal log_follow_latest
         if game_over or current_side != AI_SIDE:
             return
         level_cfg = AI_LEVELS[ai_level_index]
@@ -219,6 +223,7 @@ def run_game():
         board.move_piece(mv)
         move_history.append(mv)
         redo_stack.clear()
+        log_follow_latest = True
         selected = None
         valid_moves = []
 
@@ -260,8 +265,11 @@ def run_game():
                         max_offset = max(0, vi - box_lines)
 
                         if btn == 4:  # scroll up
+                            log_follow_latest = False
                             move_log_offset = max(0, move_log_offset - 1)
+                            
                         elif btn == 5:  # scroll down
+                            log_follow_latest = False
                             move_log_offset = min(max_offset, move_log_offset + 1)
                     continue
 
@@ -355,6 +363,14 @@ def run_game():
                             settings.board_theme_index = (settings.board_theme_index + 1) % len(BOARD_THEMES)
                             save_settings(settings)
                             continue
+                        if btn_settings_piece_body.is_clicked((mx, my)) and PIECE_BODY_THEMES:
+                            settings.piece_body_theme_index = (settings.piece_body_theme_index + 1) % len(PIECE_BODY_THEMES)
+                            save_settings(settings)
+                            continue
+                        if btn_settings_piece_icons.is_clicked((mx, my)) and PIECE_SYMBOL_SETS:
+                            settings.piece_symbol_set_index = (settings.piece_symbol_set_index + 1) % len(PIECE_SYMBOL_SETS)
+                            save_settings(settings)
+                            continue
                         if btn_settings_piece_theme.is_clicked((mx, my)):
                             settings.piece_theme_index = (settings.piece_theme_index + 1) % len(PIECE_THEMES)
                             save_settings(settings)
@@ -440,6 +456,7 @@ def run_game():
                                 board.undo_move(last_move)
                                 redo_stack.append(last_move)
                                 current_side = Side.RED if current_side == Side.BLACK else Side.BLACK
+                                log_follow_latest = True
                             update_game_state_after_side_change()
                         continue
                     # Resign clicked
@@ -493,6 +510,7 @@ def run_game():
                                         board.move_piece(mv)
                                         move_history.append(mv)
                                         redo_stack.clear()
+                                        log_follow_latest = True
 
                                         current_side = Side.BLACK if current_side == Side.RED else Side.RED
                                         update_game_state_after_side_change()
@@ -678,10 +696,20 @@ def run_game():
                 view_index = len(move_history)
 
             max_offset = max(0, view_index - max_lines)
-            if move_log_offset > max_offset:
-                move_log_offset = max_offset
-            if move_log_offset < 0:
-                move_log_offset = 0
+
+            if log_active_tab == "moves":
+                if log_follow_latest:
+                    move_log_offset = max_offset
+                else:
+                    if move_log_offset > max_offset:
+                        move_log_offset = max_offset
+                    if move_log_offset < 0:
+                        move_log_offset = 0
+            else:
+                if move_log_offset > max_offset:
+                    move_log_offset = max_offset
+                if move_log_offset < 0:
+                    move_log_offset = 0
 
             if log_active_tab == "moves":
                 start_idx = move_log_offset
@@ -702,32 +730,162 @@ def run_game():
                     screen.blit(et_surf, et_rect)
 
             else:
-                captured_by_red = []  
-                captured_by_black = []
+                # Tab Captured: thống kê quân bị ăn, dùng PNG icon + số lượng
+                captured_by_red_counts = {} # RED ăn được quân của BLACK
+                captured_by_black_counts = {} # BLACK ăn được quân của RED
 
                 for mv in move_history[:view_index]:
                     if mv.captured is not None:
                         mover_side = mv.piece.side
+                        pt = mv.captured.ptype
                         if mover_side == Side.RED:
-                            captured_by_red.append(mv.captured)
+                            captured_by_red_counts[pt] = captured_by_red_counts.get(pt, 0) + 1
                         else:
-                            captured_by_black.append(mv.captured)
+                            captured_by_black_counts[pt] = captured_by_black_counts.get(pt, 0) + 1
 
-                def piece_char_for_display(piece):
-                    if piece.ptype == PieceType.GENERAL:
-                        return "帥" if piece.side == Side.RED else "將"
-                    elif piece.ptype == PieceType.ADVISOR:
-                        return "仕" if piece.side == Side.RED else "士"
-                    elif piece.ptype == PieceType.ELEPHANT:
-                        return "相" if piece.side == Side.RED else "象"
-                    elif piece.ptype == PieceType.HORSE:
-                        return "傌" if piece.side == Side.RED else "馬"
-                    elif piece.ptype == PieceType.ROOK:
-                        return "俥" if piece.side == Side.RED else "車"
-                    elif piece.ptype == PieceType.CANNON:
-                        return "炮" if piece.side == Side.RED else "砲"
+                if settings.language == "en":
+                    red_label = "RED captured:"
+                    black_label = "BLACK captured:"
+                else:
+                    red_label = "ĐỎ ăn được:"
+                    black_label = "ĐEN ăn được:"
+
+                # Thứ tự hiển thị các loại quân
+                piece_order = [
+                    PieceType.GENERAL,
+                    PieceType.ROOK,
+                    PieceType.CANNON,
+                    PieceType.HORSE,
+                    PieceType.ELEPHANT,
+                    PieceType.ADVISOR,
+                    PieceType.SOLDIER,
+                ]
+
+                small_size = 26
+
+                class _DummyPiece:
+                    def __init__(self, side, ptype):
+                        self.side = side
+                        self.ptype = ptype
+
+                def piece_label_text(ptype):
+                    if settings.language == "en":
+                        names = {
+                            PieceType.GENERAL: "Gen",
+                            PieceType.ROOK: "Rook",
+                            PieceType.CANNON: "Cannon",
+                            PieceType.HORSE: "Horse",
+                            PieceType.ELEPHANT: "Elephant",
+                            PieceType.ADVISOR: "Advisor",
+                            PieceType.SOLDIER: "Soldier",
+                        }
                     else:
-                        return "兵" if piece.side == Side.RED else "卒"
+                        names = {
+                            PieceType.GENERAL: "Tướng",
+                            PieceType.ROOK: "Xe",
+                            PieceType.CANNON: "Pháo",
+                            PieceType.HORSE: "Mã",
+                            PieceType.ELEPHANT: "Tượng",
+                            PieceType.ADVISOR: "Sĩ",
+                            PieceType.SOLDIER: "Tốt",
+                        }
+                    return names.get(ptype, "?")
+
+                y_text = log_box_rect.y + inner_margin_y
+
+                # RED captured
+                red_surf = font_text.render(red_label, True, (160, 0, 0))
+                screen.blit(red_surf, (log_box_rect.x + inner_margin_x, y_text))
+                y_text += line_height
+
+                x_icon = log_box_rect.x + inner_margin_x
+                max_x = log_box_rect.x + log_box_rect.width - inner_margin_x
+
+                for pt in piece_order:
+                    count = captured_by_red_counts.get(pt, 0)
+                    if count <= 0:
+                        continue
+
+                    dummy_piece = _DummyPiece(Side.BLACK, pt)  # RED cap BLACK
+                    icon = get_piece_sprite(dummy_piece, settings, small_size)
+                    if icon is None:
+                        icon_text = piece_label_text(pt)
+                        icon = font_text.render(icon_text, True, (0, 0, 0))
+                    icon_rect = icon.get_rect(topleft=(x_icon, y_text))
+                    if icon_rect.right > max_x:
+                        x_icon = log_box_rect.x + inner_margin_x
+                        y_text += line_height
+                        icon_rect.topleft = (x_icon, y_text)
+                    screen.blit(icon, icon_rect.topleft)
+                    x_icon = icon_rect.right + 4
+
+                    cnt_txt = f"x{count}"
+                    cnt_surf = font_text.render(cnt_txt, True, (0, 0, 0))
+                    cnt_rect = cnt_surf.get_rect(midleft=(x_icon, y_text + icon_rect.height / 2 - 2))
+                    if cnt_rect.right > max_x:
+                        x_icon = log_box_rect.x + inner_margin_x
+                        y_text += line_height
+                        cnt_rect.midleft = (x_icon, y_text + icon_rect.height / 2 - 2)
+                    screen.blit(cnt_surf, cnt_rect.topleft)
+                    x_icon = cnt_rect.right + 8
+
+                y_text += line_height + 6
+
+                # BLACK captured
+                black_surf = font_text.render(black_label, True, (0, 0, 160))
+                screen.blit(black_surf, (log_box_rect.x + inner_margin_x, y_text))
+                y_text += line_height
+
+                x_icon = log_box_rect.x + inner_margin_x
+                for pt in piece_order:
+                    count = captured_by_black_counts.get(pt, 0)
+                    if count <= 0:
+                        continue
+
+                    dummy_piece = _DummyPiece(Side.RED, pt)  # BLACK cap RED
+                    icon = get_piece_sprite(dummy_piece, settings, small_size)
+                    if icon is None:
+                        icon_text = piece_label_text(pt)
+                        icon = font_text.render(icon_text, True, (0, 0, 0))
+                    icon_rect = icon.get_rect(topleft=(x_icon, y_text))
+                    if icon_rect.right > max_x:
+                        x_icon = log_box_rect.x + inner_margin_x
+                        y_text += line_height
+                        icon_rect.topleft = (x_icon, y_text)
+                    screen.blit(icon, icon_rect.topleft)
+                    x_icon = icon_rect.right + 4
+
+                    cnt_txt = f"x{count}"
+                    cnt_surf = font_text.render(cnt_txt, True, (0, 0, 0))
+                    cnt_rect = cnt_surf.get_rect(midleft=(x_icon, y_text + icon_rect.height / 2 - 2))
+                    if cnt_rect.right > max_x:
+                        x_icon = log_box_rect.x + inner_margin_x
+                        y_text += line_height
+                        cnt_rect.midleft = (x_icon, y_text + icon_rect.height / 2 - 2)
+                    screen.blit(cnt_surf, cnt_rect.topleft)
+                    x_icon = cnt_rect.right + 8
+
+                if not captured_by_red_counts and not captured_by_black_counts:
+                    empty_txt = "(no captured pieces)" if settings.language == "en" else "(chưa ăn được quân nào)"
+                    et_surf = font_text.render(empty_txt, True, (120, 120, 120))
+                    et_rect = et_surf.get_rect(center=log_box_rect.center)
+                    screen.blit(et_surf, et_rect)
+
+                def piece_char_for_display(ptype, side):
+                    if ptype == PieceType.GENERAL:
+                        return "帥" if side == Side.RED else "將"
+                    elif ptype == PieceType.ADVISOR:
+                        return "仕" if side == Side.RED else "士"
+                    elif ptype == PieceType.ELEPHANT:
+                        return "相" if side == Side.RED else "象"
+                    elif ptype == PieceType.HORSE:
+                        return "傌" if side == Side.RED else "馬"
+                    elif ptype == PieceType.ROOK:
+                        return "俥" if side == Side.RED else "車"
+                    elif ptype == PieceType.CANNON:
+                        return "炮" if side == Side.RED else "砲"
+                    else:
+                        return "兵" if side == Side.RED else "卒"
 
                 if settings.language == "en":
                     red_label = "RED captured:"
@@ -744,8 +902,8 @@ def run_game():
                 x_icon = log_box_rect.x + inner_margin_x
                 max_x = log_box_rect.x + log_box_rect.width - inner_margin_x
 
-                for p in captured_by_red:
-                    ch = piece_char_for_display(p)
+                for p in captured_by_red_counts:
+                    ch = piece_char_for_display(p, Side.BLACK)
                     icon_surf = font_text.render(ch, True, (0, 0, 0))
                     ir = icon_surf.get_rect(topleft=(x_icon, y_text))
                     if ir.right > max_x:
@@ -761,8 +919,8 @@ def run_game():
                 y_text += line_height
 
                 x_icon = log_box_rect.x + inner_margin_x
-                for p in captured_by_black:
-                    ch = piece_char_for_display(p)
+                for p in captured_by_black_counts:
+                    ch = piece_char_for_display(p, Side.RED)
                     icon_surf = font_text.render(ch, True, (0, 0, 0))
                     ir = icon_surf.get_rect(topleft=(x_icon, y_text))
                     if ir.right > max_x:
@@ -772,7 +930,7 @@ def run_game():
                     screen.blit(icon_surf, ir.topleft)
                     x_icon = ir.right + 5
 
-                if not captured_by_red and not captured_by_black:
+                if not captured_by_red_counts and not captured_by_black_counts:
                     empty_txt = "(no captured pieces)" if settings.language == "en" else "(chưa ăn được quân nào)"
                     et_surf = font_text.render(empty_txt, True, (120, 120, 120))
                     et_rect = et_surf.get_rect(center=log_box_rect.center)
@@ -800,11 +958,20 @@ def run_game():
 
                 board_theme = BOARD_THEMES[settings.board_theme_index]
                 board_name = board_theme["name"][settings.language]
-                piece_theme = PIECE_THEMES[settings.piece_theme_index]
-                piece_name = piece_theme["name"][settings.language]
+
+                body_theme = PIECE_BODY_THEMES[settings.piece_body_theme_index % len(PIECE_BODY_THEMES)] if PIECE_BODY_THEMES else None
+                symbol_set = PIECE_SYMBOL_SETS[settings.piece_symbol_set_index % len(PIECE_SYMBOL_SETS)] if PIECE_SYMBOL_SETS else None
+                color_theme = PIECE_THEMES[settings.piece_theme_index]
+
+                body_name = body_theme["name"][settings.language] if body_theme else "-"
+                symbol_name = symbol_set["name"][settings.language] if symbol_set else "-"
+                color_name = color_theme["name"][settings.language]
 
                 board_label = t(settings, "settings_board_theme").format(name=board_name)
-                piece_label = t(settings, "settings_piece_theme").format(name=piece_name)
+                body_label = t(settings, "settings_piece_body").format(name=body_name)
+                icons_label = t(settings, "settings_piece_icons").format(name=symbol_name)
+                symbol_color_label = t(settings, "settings_piece_symbol_color").format(name=color_name)
+
 
                 mode_label_key = "display_window" if settings.display_mode == "window" else "display_fullscreen"
                 mode_label_text = t(settings, mode_label_key)
@@ -815,14 +982,20 @@ def run_game():
                 else:
                     lang_label = "Ngôn ngữ: Tiếng Việt"
 
+                # Label buttons in settings
                 btn_settings_board_theme.label = board_label
-                btn_settings_piece_theme.label = piece_label
+                btn_settings_piece_body.label = body_label
+                btn_settings_piece_icons.label = icons_label
+                btn_settings_piece_theme.label = symbol_color_label
                 btn_settings_display.label = display_label
                 btn_settings_language.label = lang_label
                 btn_settings_player_stats.label = t(settings, "settings_player_stats")
                 btn_settings_back.label = t(settings, "btn_back")
 
+                # Draw buttons in settings
                 btn_settings_board_theme.draw(screen, font_button, enabled=True)
+                btn_settings_piece_body.draw(screen, font_button, enabled=True)
+                btn_settings_piece_icons.draw(screen, font_button, enabled=True)
                 btn_settings_piece_theme.draw(screen, font_button, enabled=True)
                 btn_settings_display.draw(screen, font_button, enabled=True)
                 btn_settings_language.draw(screen, font_button, enabled=True)

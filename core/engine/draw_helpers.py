@@ -4,10 +4,10 @@ from config import BOARD_COLS, BOARD_ROWS, CELL_SIZE, MARGIN_X, MARGIN_Y
 from core.engine.types import Side, PieceType
 
 from data.themes import BOARD_THEMES, PIECE_THEMES
-from data.avatar_assets import AVATAR_BOARD_SIZE, load_avatar_image
+from data.avatar_assets import AVATAR_BOARD_SIZE, get_piece_sprite, load_avatar_image
 from core.profiles_manager import find_player
 from core.engine.ai_engine import AI_LEVELS
-
+from core.settings_manager import Settings
 
 def board_to_screen(col, row):
     x = MARGIN_X + col * CELL_SIZE
@@ -53,8 +53,18 @@ def draw_board(surface, settings):
     pygame.draw.rect(surface, river_color, river_rect)
 
 
-def draw_piece(surface, piece, col, row, font, settings):
+def draw_piece(surface, piece, col, row, font, settings: Settings):
     x, y = board_to_screen(col, row)
+    size = int(CELL_SIZE * 0.9)
+
+    # Draw piece sprite
+    sprite = get_piece_sprite(piece, settings, size)
+    if sprite is not None:
+        rect = sprite.get_rect(center=(x, y))
+        surface.blit(sprite, rect)
+        return
+
+    # Fallback text
     cx = x
     cy = y
     radius = CELL_SIZE // 2 - 4
@@ -63,7 +73,7 @@ def draw_piece(surface, piece, col, row, font, settings):
 
     pygame.draw.circle(surface, (245, 230, 200), (cx, cy), radius)
     pygame.draw.circle(surface, color, (cx, cy), radius, 2)
-
+    
     if piece.ptype == PieceType.GENERAL:
         text = "帥" if piece.side == Side.RED else "將"
     elif piece.ptype == PieceType.ADVISOR:

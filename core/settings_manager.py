@@ -3,6 +3,8 @@ import os
 from typing import Dict, Any
 
 from data.themes import BOARD_THEMES, PIECE_THEMES
+from data.localisation import PIECE_BODY_THEMES, PIECE_SYMBOL_SETS
+
 
 
 class Settings:
@@ -11,6 +13,9 @@ class Settings:
         self.piece_theme_index = 0
         self.display_mode = "window"  # "window" or "fullscreen"
         self.language = "vi"          # "vi" or "en"
+        self.piece_body_theme_index = 0
+        self.piece_symbol_set_index = 0
+
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +33,8 @@ def settings_to_dict(settings: Settings) -> Dict[str, Any]:
         "piece_theme_index": settings.piece_theme_index,
         "display_mode": settings.display_mode,
         "language": settings.language,
+        "piece_body_theme_index": settings.piece_body_theme_index,
+        "piece_symbol_set_index": settings.piece_symbol_set_index,
     }
 
 
@@ -51,6 +58,11 @@ def load_settings() -> Settings:
             s.display_mode = data["display_mode"]
         if data.get("language") in ("vi", "en"):
             s.language = data["language"]
+        if "piece_body_theme_index" in data and PIECE_BODY_THEMES:
+            s.piece_body_theme_index = int(data["piece_body_theme_index"]) % len(PIECE_BODY_THEMES)
+        if "piece_symbol_set_index" in data and PIECE_SYMBOL_SETS:
+            s.piece_symbol_set_index = int(data["piece_symbol_set_index"]) % len(PIECE_SYMBOL_SETS)
+
     return s
 
 
