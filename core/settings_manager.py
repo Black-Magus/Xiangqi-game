@@ -11,7 +11,7 @@ class Settings:
     def __init__(self):
         self.board_theme_index = 0
         self.piece_theme_index = 0
-        self.display_mode = "window"  # "window" or "fullscreen"
+        self.display_mode = "window"  # "window", "window_fullscreen", or "fullscreen"
         self.language = "vi"          # "vi" or "en"
         self.piece_body_theme_index = 0
         self.piece_symbol_set_index = 0
@@ -56,7 +56,7 @@ def load_settings() -> Settings:
             s.board_theme_index = int(data["board_theme_index"]) % len(BOARD_THEMES)
         if "piece_theme_index" in data:
             s.piece_theme_index = int(data["piece_theme_index"]) % len(PIECE_THEMES)
-        if data.get("display_mode") in ("window", "fullscreen"):
+        if data.get("display_mode") in ("window", "window_fullscreen", "fullscreen"):
             s.display_mode = data["display_mode"]
         if data.get("language") in ("vi", "en"):
             s.language = data["language"]

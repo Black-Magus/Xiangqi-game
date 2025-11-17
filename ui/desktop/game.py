@@ -58,17 +58,32 @@ def run_game():
 
     logical_width = compute_logical_width()
 
+    def lock_size_to_ratio(width, height):
+        width_based_height = max(400, int(round(width / target_ratio)))
+        height_based_width = max(400, int(round(height * target_ratio)))
+        if abs(width_based_height - height) <= abs(height_based_width - width):
+            return width, width_based_height
+        return height_based_width, height
+
     def initial_window_size():
         width = int(round(base_height * target_ratio))
         height = base_height
         return max(400, width), max(400, height)
 
     window_mode_size = initial_window_size()
-    window_flags = pygame.FULLSCREEN if settings.display_mode == "fullscreen" else (pygame.RESIZABLE | pygame.DOUBLEBUF)
+    window_flags = 0
 
     if settings.display_mode == "fullscreen":
+        window_flags = pygame.FULLSCREEN | pygame.DOUBLEBUF
         window_surface = pygame.display.set_mode((0, 0), window_flags)
+    elif settings.display_mode == "window_fullscreen":
+        info = pygame.display.Info()
+        window_mode_size = (info.current_w, info.current_h)
+        window_flags = pygame.NOFRAME | pygame.DOUBLEBUF
+        window_surface = pygame.display.set_mode(window_mode_size, window_flags)
     else:
+        window_flags = pygame.RESIZABLE | pygame.DOUBLEBUF
+        window_mode_size = lock_size_to_ratio(*window_mode_size)
         window_surface = pygame.display.set_mode(window_mode_size, window_flags)
     pygame.display.set_caption("Xiangqi - Cờ Tướng")
 
@@ -165,33 +180,197 @@ def run_game():
     btn_pause_to_menu = Button(pygame.Rect(pause_center_x - 100, pause_start_y + 110, 200, 40))
 
     settings_center_x = WINDOW_WIDTH // 2
-    btn_settings_board_theme = Button(pygame.Rect(settings_center_x - 160, 200, 320, 36))
-    btn_settings_piece_body = Button(pygame.Rect(settings_center_x - 160, 245, 320, 36))
-    btn_settings_piece_icons = Button(pygame.Rect(settings_center_x - 160, 290, 320, 36))
-    btn_settings_piece_theme = Button(pygame.Rect(settings_center_x - 160, 335, 320, 36))  
-    btn_settings_display = Button(pygame.Rect(settings_center_x - 160, 380, 320, 36))
-    btn_settings_resolution = Button(pygame.Rect(settings_center_x - 160, 425, 320, 36))
-    btn_settings_language = Button(pygame.Rect(settings_center_x - 160, 470, 320, 36))
-    btn_settings_player_stats = Button(pygame.Rect(settings_center_x - 160, 515, 320, 36))
-    btn_settings_back = Button(pygame.Rect(settings_center_x - 80, WINDOW_HEIGHT - 100, 160, 40))
-
-    def lock_size_to_ratio(width, height):
-        width_based_height = max(400, int(round(width / target_ratio)))
-        height_based_width = max(400, int(round(height * target_ratio)))
-        if abs(width_based_height - height) <= abs(height_based_width - width):
-            return width, width_based_height
-        return height_based_width, height
+    settings_open_dropdown = None
+    btn_settings_player_stats = Button(pygame.Rect(settings_center_x - 110, WINDOW_HEIGHT - 110, 220, 36))
+    btn_settings_back = Button(pygame.Rect(settings_center_x - 110, WINDOW_HEIGHT - 65, 220, 36))
 
     def apply_display_mode():
         nonlocal window_surface, window_mode_size, window_flags
         if settings.display_mode == "fullscreen":
             window_flags = pygame.FULLSCREEN | pygame.DOUBLEBUF
             window_surface = pygame.display.set_mode((0, 0), window_flags)
+        elif settings.display_mode == "window_fullscreen":
+            info = pygame.display.Info()
+            window_mode_size = (info.current_w, info.current_h)
+            window_flags = pygame.NOFRAME | pygame.DOUBLEBUF
+            window_surface = pygame.display.set_mode(window_mode_size, window_flags)
         else:
             window_flags = pygame.RESIZABLE | pygame.DOUBLEBUF
             window_mode_size = lock_size_to_ratio(*window_mode_size)
             window_surface = pygame.display.set_mode(window_mode_size, window_flags)
         recompute_render_scale()
+
+    def build_settings_items():
+        lang = settings.language
+
+        def make_theme_options(entries):
+            return [{"value": idx, "text": entry["name"][lang]} for idx, entry in enumerate(entries)]
+
+        board_options = make_theme_options(BOARD_THEMES)
+        body_options = make_theme_options(PIECE_BODY_THEMES)
+        symbol_options = make_theme_options(PIECE_SYMBOL_SETS)
+        color_options = make_theme_options(PIECE_THEMES)
+
+        display_modes = [
+            {"value": "window", "text": t(settings, "display_window")},
+            {"value": "window_fullscreen", "text": t(settings, "display_window_fullscreen")},
+            {"value": "fullscreen", "text": t(settings, "display_fullscreen")},
+        ]
+        ratio_options = [
+            {"value": "fit", "text": t(settings, "ratio_fit")},
+            {"value": "wide", "text": t(settings, "ratio_wide")},
+        ]
+        language_options = [
+            {"value": "vi", "text": t(settings, "settings_option_vietnamese")},
+            {"value": "en", "text": t(settings, "settings_option_english")},
+        ]
+
+        def current_label(options, value):
+            for opt in options:
+                if opt["value"] == value:
+                    return opt["text"]
+            return t(settings, "settings_option_not_available")
+
+        items = {
+            "board_theme": {
+                "label": t(settings, "settings_label_board_theme"),
+                "value": settings.board_theme_index % len(BOARD_THEMES) if BOARD_THEMES else 0,
+                "options": board_options,
+                "enabled": bool(board_options),
+            },
+            "piece_body": {
+                "label": t(settings, "settings_label_piece_body"),
+                "value": settings.piece_body_theme_index % len(PIECE_BODY_THEMES) if PIECE_BODY_THEMES else 0,
+                "options": body_options,
+                "enabled": bool(body_options),
+            },
+            "piece_symbols": {
+                "label": t(settings, "settings_label_piece_icons"),
+                "value": settings.piece_symbol_set_index % len(PIECE_SYMBOL_SETS) if PIECE_SYMBOL_SETS else 0,
+                "options": symbol_options,
+                "enabled": bool(symbol_options),
+            },
+            "piece_symbol_color": {
+                "label": t(settings, "settings_label_piece_symbol_color"),
+                "value": settings.piece_theme_index % len(PIECE_THEMES) if PIECE_THEMES else 0,
+                "options": color_options,
+                "enabled": bool(color_options),
+            },
+            "display_mode": {
+                "label": t(settings, "settings_label_display_mode"),
+                "value": settings.display_mode,
+                "options": display_modes,
+                "enabled": True,
+            },
+            "resolution": {
+                "label": t(settings, "settings_label_resolution"),
+                "value": settings.resolution_ratio,
+                "options": ratio_options,
+                "enabled": True,
+            },
+            "language": {
+                "label": t(settings, "settings_label_language"),
+                "value": settings.language,
+                "options": language_options,
+                "enabled": True,
+            },
+        }
+
+        for item in items.values():
+            item["selected_label"] = current_label(item["options"], item["value"])
+
+        return items
+
+    def build_settings_layout():
+        items = build_settings_items()
+        row_width = 520
+        dropdown_width = 230
+        start_x = (WINDOW_WIDTH - row_width) // 2
+        start_y = 130
+        row_height = 40
+        gap_y = 8
+        section_gap = 10
+        headers = []
+        rows = []
+        options = []
+
+        sections = [
+            ("appearance", t(settings, "settings_section_appearance"), ["board_theme", "piece_body", "piece_symbols", "piece_symbol_color"]),
+            ("display", t(settings, "settings_section_display"), ["display_mode", "resolution"]),
+            ("general", t(settings, "settings_section_general"), ["language"]),
+        ]
+
+        y = start_y
+        for _, title, keys in sections:
+            headers.append({"title": title, "pos": (start_x, y)})
+            y += 28
+            for key in keys:
+                item = items[key]
+                row_rect = pygame.Rect(start_x, y, row_width, row_height)
+                value_rect = pygame.Rect(row_rect.right - dropdown_width - 12, row_rect.y + 5, dropdown_width, row_rect.height - 10)
+                rows.append(
+                    {
+                        "key": key,
+                        "rect": row_rect,
+                        "value_rect": value_rect,
+                        "label": item["label"],
+                        "value_text": item["selected_label"],
+                        "enabled": item["enabled"],
+                        "options": item["options"],
+                        "value": item["value"],
+                    }
+                )
+
+                if settings_open_dropdown == key and item["enabled"]:
+                    option_height = 30
+                    for idx, opt in enumerate(item["options"]):
+                        opt_rect = pygame.Rect(
+                            value_rect.x,
+                            value_rect.bottom + 4 + idx * (option_height + 4),
+                            value_rect.width,
+                            option_height,
+                        )
+                        options.append(
+                            {
+                                "key": key,
+                                "rect": opt_rect,
+                                "value": opt["value"],
+                                "text": opt["text"],
+                                "selected": opt["value"] == item["value"],
+                            }
+                        )
+
+                y += row_height + gap_y
+            y += section_gap
+
+        return {"headers": headers, "rows": rows, "options": options, "content_bottom": y}
+
+    def apply_setting_selection(key, value):
+        nonlocal window_surface, window_mode_size, window_flags, logical_width, target_ratio
+
+        if key == "board_theme" and BOARD_THEMES:
+            settings.board_theme_index = int(value) % len(BOARD_THEMES)
+        elif key == "piece_body" and PIECE_BODY_THEMES:
+            settings.piece_body_theme_index = int(value) % len(PIECE_BODY_THEMES)
+        elif key == "piece_symbols" and PIECE_SYMBOL_SETS:
+            settings.piece_symbol_set_index = int(value) % len(PIECE_SYMBOL_SETS)
+        elif key == "piece_symbol_color" and PIECE_THEMES:
+            settings.piece_theme_index = int(value) % len(PIECE_THEMES)
+        elif key == "display_mode":
+            settings.display_mode = value
+            apply_display_mode()
+        elif key == "resolution":
+            settings.resolution_ratio = value
+            target_ratio = ratio_value(settings.resolution_ratio)
+            logical_width = compute_logical_width()
+            window_mode_size = lock_size_to_ratio(*window_mode_size)
+            if settings.display_mode == "window":
+                window_surface = pygame.display.set_mode(window_mode_size, window_flags)
+            refresh_render_targets()
+        elif key == "language":
+            settings.language = value
+
+        save_settings(settings)
 
     def to_game_coords(pos):
         if render_scale <= 0:
@@ -319,6 +498,7 @@ def run_game():
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     if state == "settings":
+                        settings_open_dropdown = None
                         if settings_page == "stats":
                             settings_page = "main"
                         else:
@@ -435,6 +615,7 @@ def run_game():
                         continue
                     if btn_menu_settings.is_clicked((mx, my)):
                         settings_return_state = "menu"
+                        settings_open_dropdown = None
                         state = "settings"
                         continue
                     if btn_menu_exit.is_clicked((mx, my)):
@@ -443,51 +624,46 @@ def run_game():
                 
                 elif state == "settings":
                     if settings_page == "main":
-                        if btn_settings_board_theme.is_clicked((mx, my)):
-                            settings.board_theme_index = (settings.board_theme_index + 1) % len(BOARD_THEMES)
-                            save_settings(settings)
+                        layout = build_settings_layout()
+
+                        option_clicked = False
+                        for opt in layout["options"]:
+                            if opt["rect"].collidepoint(mx, my):
+                                apply_setting_selection(opt["key"], opt["value"])
+                                settings_open_dropdown = None
+                                option_clicked = True
+                                break
+                        if option_clicked:
                             continue
-                        if btn_settings_piece_body.is_clicked((mx, my)) and PIECE_BODY_THEMES:
-                            settings.piece_body_theme_index = (settings.piece_body_theme_index + 1) % len(PIECE_BODY_THEMES)
-                            save_settings(settings)
-                            continue
-                        if btn_settings_piece_icons.is_clicked((mx, my)) and PIECE_SYMBOL_SETS:
-                            settings.piece_symbol_set_index = (settings.piece_symbol_set_index + 1) % len(PIECE_SYMBOL_SETS)
-                            save_settings(settings)
-                            continue
-                        if btn_settings_piece_theme.is_clicked((mx, my)):
-                            settings.piece_theme_index = (settings.piece_theme_index + 1) % len(PIECE_THEMES)
-                            save_settings(settings)
-                            continue
-                        if btn_settings_display.is_clicked((mx, my)):
-                            settings.display_mode = "fullscreen" if settings.display_mode == "window" else "window"
-                            apply_display_mode()
-                            save_settings(settings)
-                            continue
-                        if btn_settings_resolution.is_clicked((mx, my)):
-                            settings.resolution_ratio = "wide" if settings.resolution_ratio == "fit" else "fit"
-                            target_ratio = ratio_value(settings.resolution_ratio)
-                            logical_width = compute_logical_width()
-                            window_mode_size = lock_size_to_ratio(*window_mode_size)
-                            if settings.display_mode == "window":
-                                window_surface = pygame.display.set_mode(window_mode_size, window_flags)
-                            refresh_render_targets()
-                            save_settings(settings)
-                            continue
-                        if btn_settings_language.is_clicked((mx, my)):
-                            settings.language = "en" if settings.language == "vi" else "vi"
-                            save_settings(settings)
-                            continue
+
                         if btn_settings_player_stats.is_clicked((mx, my)):
                             settings_page = "stats"
+                            settings_open_dropdown = None
                             continue
                         if btn_settings_back.is_clicked((mx, my)):
                             state = settings_return_state
                             settings_page = "main"
+                            settings_open_dropdown = None
+                            continue
+
+                        row_clicked = False
+                        for row in layout["rows"]:
+                            if not row["enabled"]:
+                                continue
+                            if row["rect"].collidepoint(mx, my) or row["value_rect"].collidepoint(mx, my):
+                                settings_open_dropdown = None if settings_open_dropdown == row["key"] else row["key"]
+                                row_clicked = True
+                                break
+                        if row_clicked:
+                            continue
+
+                        if settings_open_dropdown is not None:
+                            settings_open_dropdown = None
                             continue
                     else:
                         if btn_settings_back.is_clicked((mx, my)):
                             settings_page = "main"
+                            settings_open_dropdown = None
                             continue
                 # In-game state         
                 elif state in ("pvp", "ai"):
@@ -504,6 +680,7 @@ def run_game():
                             settings_return_state = state
                             settings_page = "main"
                             paused = False
+                            settings_open_dropdown = None
                             state = "settings"
                             continue
 
@@ -518,6 +695,7 @@ def run_game():
                     if btn_in_game_settings.is_clicked((mx, my)):
                         settings_return_state = state
                         settings_page = "main"
+                        settings_open_dropdown = None
                         state = "settings"
                         continue
                     # Replay 
@@ -653,6 +831,7 @@ def run_game():
             if btn_in_game_settings.is_clicked((mx, my)):
                 settings_return_state = state
                 settings_page = "main"
+                settings_open_dropdown = None
                 state = "settings"
                 continue
 
@@ -1046,58 +1225,67 @@ def run_game():
             screen.fill((50, 40, 40))
 
             if settings_page == "main":
+                layout = build_settings_layout()
+
                 title_surf = font_title.render(t(settings, "settings_title"), True, (240, 240, 240))
                 title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, 120))
                 screen.blit(title_surf, title_rect)
 
-                board_theme = BOARD_THEMES[settings.board_theme_index]
-                board_name = board_theme["name"][settings.language]
+                header_color = (215, 205, 205)
+                for header in layout["headers"]:
+                    header_surf = font_button.render(header["title"], True, header_color)
+                    screen.blit(header_surf, header["pos"])
 
-                body_theme = PIECE_BODY_THEMES[settings.piece_body_theme_index % len(PIECE_BODY_THEMES)] if PIECE_BODY_THEMES else None
-                symbol_set = PIECE_SYMBOL_SETS[settings.piece_symbol_set_index % len(PIECE_SYMBOL_SETS)] if PIECE_SYMBOL_SETS else None
-                color_theme = PIECE_THEMES[settings.piece_theme_index]
+                for row in layout["rows"]:
+                    base_color = (90, 80, 80) if row["enabled"] else (70, 70, 70)
+                    border_color = (40, 40, 40)
+                    pygame.draw.rect(screen, base_color, row["rect"], border_radius=8)
+                    pygame.draw.rect(screen, border_color, row["rect"], 2, border_radius=8)
 
-                body_name = body_theme["name"][settings.language] if body_theme else "-"
-                symbol_name = symbol_set["name"][settings.language] if symbol_set else "-"
-                color_name = color_theme["name"][settings.language]
+                    label_surf = font_text.render(row["label"], True, (235, 235, 235))
+                    label_rect = label_surf.get_rect(midleft=(row["rect"].x + 14, row["rect"].centery))
+                    screen.blit(label_surf, label_rect)
 
-                board_label = t(settings, "settings_board_theme").format(name=board_name)
-                body_label = t(settings, "settings_piece_body").format(name=body_name)
-                icons_label = t(settings, "settings_piece_icons").format(name=symbol_name)
-                symbol_color_label = t(settings, "settings_piece_symbol_color").format(name=color_name)
+                    value_rect = row["value_rect"]
+                    value_color = (230, 230, 230) if row["enabled"] else (150, 150, 150)
+                    pygame.draw.rect(screen, value_color, value_rect, border_radius=6)
+                    pygame.draw.rect(screen, border_color, value_rect, 2, border_radius=6)
 
+                    value_surf = font_button.render(row["value_text"], True, (0, 0, 0))
+                    value_surf_rect = value_surf.get_rect(midleft=(value_rect.x + 10, value_rect.centery))
+                    screen.blit(value_surf, value_surf_rect)
 
-                mode_label_key = "display_window" if settings.display_mode == "window" else "display_fullscreen"
-                mode_label_text = t(settings, mode_label_key)
-                display_label = t(settings, "settings_display").format(mode=mode_label_text)
-                ratio_label_key = "ratio_fit" if settings.resolution_ratio == "fit" else "ratio_wide"
-                ratio_label_text = t(settings, ratio_label_key)
-                resolution_label = t(settings, "settings_resolution_ratio").format(mode=ratio_label_text)
+                    arrow_x = value_rect.right - 16
+                    arrow_y = value_rect.centery
+                    if settings_open_dropdown == row["key"]:
+                        arrow_pts = [(arrow_x - 6, arrow_y + 3), (arrow_x + 6, arrow_y + 3), (arrow_x, arrow_y - 5)]
+                    else:
+                        arrow_pts = [(arrow_x - 6, arrow_y - 3), (arrow_x + 6, arrow_y - 3), (arrow_x, arrow_y + 5)]
+                    pygame.draw.polygon(screen, (0, 0, 0), arrow_pts)
 
-                if settings.language == "en":
-                    lang_label = "Language: English"
-                else:
-                    lang_label = "Ngôn ngữ: Tiếng Việt"
+                for opt in layout["options"]:
+                    bg = (225, 225, 225)
+                    if opt["selected"]:
+                        bg = (200, 220, 255)
+                    pygame.draw.rect(screen, bg, opt["rect"], border_radius=6)
+                    pygame.draw.rect(screen, (60, 60, 60), opt["rect"], 1, border_radius=6)
+                    opt_surf = font_button.render(opt["text"], True, (0, 0, 0))
+                    opt_rect = opt_surf.get_rect(midleft=(opt["rect"].x + 10, opt["rect"].centery))
+                    screen.blit(opt_surf, opt_rect)
 
-                # Label buttons in settings
-                btn_settings_board_theme.label = board_label
-                btn_settings_piece_body.label = body_label
-                btn_settings_piece_icons.label = icons_label
-                btn_settings_piece_theme.label = symbol_color_label
-                btn_settings_display.label = display_label
-                btn_settings_resolution.label = resolution_label
-                btn_settings_language.label = lang_label
+                dropdown_bottom = layout["content_bottom"]
+                if layout["options"]:
+                    dropdown_bottom = max(dropdown_bottom, max(opt["rect"].bottom for opt in layout["options"]))
+
+                footer_top = max(dropdown_bottom + 30, WINDOW_HEIGHT - 140)
+                footer_top = min(footer_top, WINDOW_HEIGHT - 70)
+
+                btn_settings_player_stats.rect.center = (settings_center_x, footer_top)
+                btn_settings_back.rect.center = (settings_center_x, footer_top + 45)
+
                 btn_settings_player_stats.label = t(settings, "settings_player_stats")
                 btn_settings_back.label = t(settings, "btn_back")
 
-                # Draw buttons in settings
-                btn_settings_board_theme.draw(screen, font_button, enabled=True)
-                btn_settings_piece_body.draw(screen, font_button, enabled=True)
-                btn_settings_piece_icons.draw(screen, font_button, enabled=True)
-                btn_settings_piece_theme.draw(screen, font_button, enabled=True)
-                btn_settings_display.draw(screen, font_button, enabled=True)
-                btn_settings_resolution.draw(screen, font_button, enabled=True)
-                btn_settings_language.draw(screen, font_button, enabled=True)
                 btn_settings_player_stats.draw(screen, font_button, enabled=True)
                 btn_settings_back.draw(screen, font_button, enabled=True)
 
@@ -1154,6 +1342,7 @@ def run_game():
                     y = y_line + 10
 
                 btn_settings_back.label = t(settings, "btn_back")
+                btn_settings_back.rect.center = (settings_center_x, WINDOW_HEIGHT - 70)
                 btn_settings_back.draw(screen, font_button, enabled=True)
         # Paused modal rendering
         if paused:
