@@ -131,6 +131,13 @@ def run_game():
     font_title = pygame.font.SysFont("SimHei", 40, bold=True)
     font_avatar = pygame.font.SysFont("Consolas", 16, bold=True)
 
+    TIMER_CHOICES = [
+        ("1:00", 60),
+        ("5:00", 300),
+        ("10:00", 600),
+        ("∞", None),
+    ]
+
     board = Board()
     current_side = Side.RED
     selected = None
@@ -156,6 +163,13 @@ def run_game():
     ai_match_started = False
     settings_return_state = "menu"
     settings_page = "main"
+
+    timer_option_index = len(TIMER_CHOICES) - 1  # default unlimited
+    time_remaining = {
+        Side.RED: TIMER_CHOICES[timer_option_index][1],
+        Side.BLACK: TIMER_CHOICES[timer_option_index][1],
+    }
+    timer_rects_current = {}
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
 
@@ -384,6 +398,46 @@ def run_game():
 
         save_settings(settings)
 
+    def timer_seconds_for_index(idx: int):
+        if not TIMER_CHOICES:
+            return None
+        idx = idx % len(TIMER_CHOICES)
+        return TIMER_CHOICES[idx][1]
+
+    def reset_timers_to_full():
+        nonlocal time_remaining
+        sec = timer_seconds_for_index(timer_option_index)
+        time_remaining = {Side.RED: sec, Side.BLACK: sec}
+
+    def format_time_value(seconds):
+        if seconds is None:
+            return "∞"
+        if seconds < 0:
+            seconds = 0
+        minutes = int(seconds) // 60
+        secs = int(seconds) % 60
+        return f"{minutes}:{secs:02d}"
+
+    def timer_labels_dict():
+        return {
+            "red": format_time_value(time_remaining.get(Side.RED)),
+            "black": format_time_value(time_remaining.get(Side.BLACK)),
+        }
+
+    def can_change_timer():
+        if state not in ("pvp", "ai"):
+            return False
+        if game_over:
+            return False
+        if state == "ai":
+            return not ai_match_started
+        return len(move_history) == 0
+
+    def cycle_timer_option():
+        nonlocal timer_option_index
+        timer_option_index = (timer_option_index + 1) % len(TIMER_CHOICES)
+        reset_timers_to_full()
+
     def to_game_coords(pos):
         if render_scale <= 0:
             return 0, 0, False
@@ -410,6 +464,7 @@ def run_game():
         replay_index = None
         paused = False
         ai_match_started = False
+        reset_timers_to_full()
 
     def register_result_if_needed(winner_side, is_draw=False):
         nonlocal result_recorded
@@ -467,6 +522,30 @@ def run_game():
         winner = None
         result_recorded = False
         ai_match_started = False
+
+    def timers_are_running():
+        if state not in ("pvp", "ai"):
+            return False
+        if paused or game_over:
+            return False
+        if replay_index is not None:
+            return False
+        if state == "ai":
+            return ai_match_started
+        return len(move_history) > 0
+
+    def handle_timeout(side: Side):
+        nonlocal game_over, winner, selected, valid_moves, in_check_side, replay_index
+        if game_over:
+            return
+        game_over = True
+        winner_side = Side.BLACK if side == Side.RED else Side.RED
+        winner = winner_side
+        in_check_side = None
+        selected = None
+        valid_moves = []
+        register_result_if_needed(winner_side, False)
+        replay_index = len(move_history)
 
     def ai_make_move():
         nonlocal current_side, move_history, redo_stack, game_over, winner
@@ -609,6 +688,12 @@ def run_game():
 
                     if clicked_avatar:
                         continue
+
+                    if btn == 1 and timer_rects_current and can_change_timer():
+                        if timer_rects_current.get("red", pygame.Rect(0, 0, 0, 0)).collidepoint(mx, my) or \
+                           timer_rects_current.get("black", pygame.Rect(0, 0, 0, 0)).collidepoint(mx, my):
+                            cycle_timer_option()
+                            continue
 
                 if btn != 1:
                     continue
@@ -819,6 +904,15 @@ def run_game():
         if state == "ai" and ai_match_started and not game_over and not paused and current_side == AI_SIDE:
             ai_make_move()
 
+        if timers_are_running():
+            current_remaining = time_remaining.get(current_side)
+            if current_remaining is not None:
+                current_remaining -= dt
+                time_remaining[current_side] = current_remaining
+                if current_remaining <= 0:
+                    time_remaining[current_side] = 0
+                    handle_timeout(current_side)
+
         lang = settings.language
         lang_text = TEXT[lang]
         
@@ -847,7 +941,14 @@ def run_game():
         elif state in ("pvp", "ai"):
             draw_board(screen, settings)
             if mode is not None:
-                draw_side_avatars_on_board(screen, profiles_data, mode, ai_level_index, font_avatar)
+                timer_rects_current = draw_side_avatars_on_board(
+                    screen,
+                    profiles_data,
+                    mode,
+                    ai_level_index,
+                    font_avatar,
+                    timer_labels=timer_labels_dict(),
+                )
             if btn_log_tab_moves.is_clicked((mx, my)):
                 log_active_tab = "moves"
                 continue
@@ -1073,7 +1174,6 @@ def run_game():
                     red_label = "ĐỎ ăn được:"
                     black_label = "ĐEN ăn được:"
 
-                # Thứ tự hiển thị các loại quân
                 piece_order = [
                     PieceType.GENERAL,
                     PieceType.ROOK,

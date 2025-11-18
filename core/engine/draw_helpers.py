@@ -159,22 +159,50 @@ def _draw_text_with_shadow(surface, font, text, color, pos):
     surface.blit(shadow, (pos[0] + 1, pos[1] + 1))
     surf = font.render(text, True, color)
     surface.blit(surf, pos)
+    rect = surf.get_rect(topleft=pos)
+    return rect
 
 
-def _draw_avatar_caption(surface, rect, name, elo_value, name_color, font_avatar, align_left=False):
-    if not name:
-        return
-    name_text = str(name)
-    elo_text = f"ELO: {int(round(elo_value))}"
-
+def _compute_caption_layout(rect, font_avatar, name_text, elo_text, align_left):
     max_width = max(font_avatar.size(name_text)[0], font_avatar.size(elo_text)[0])
     pad = 10
     base_x = rect.left - max_width - pad if align_left else rect.right + pad
     name_y = rect.centery - font_avatar.get_height() + 4
     elo_y = rect.centery + 4
+    return base_x, name_y, elo_y
 
-    _draw_text_with_shadow(surface, font_avatar, name_text, name_color, (base_x, name_y))
-    _draw_text_with_shadow(surface, font_avatar, elo_text, (50, 50, 50), (base_x, elo_y))
+
+def _draw_avatar_caption(surface, rect, name, elo_value, name_color, font_avatar, align_left=False):
+    if not name:
+        return None
+    name_text = str(name)
+    elo_text = f"ELO: {int(round(elo_value))}"
+
+    base_x, name_y, elo_y = _compute_caption_layout(rect, font_avatar, name_text, elo_text, align_left)
+
+    name_rect = _draw_text_with_shadow(surface, font_avatar, name_text, name_color, (base_x, name_y))
+    elo_rect = _draw_text_with_shadow(surface, font_avatar, elo_text, (50, 50, 50), (base_x, elo_y))
+    return {"name_rect": name_rect, "elo_rect": elo_rect, "align_left": align_left}
+
+
+def _draw_timer_for_caption(surface, font_avatar, caption_info, timer_text):
+    if caption_info is None or not timer_text:
+        return None
+    name_rect = caption_info["name_rect"]
+    align_left = caption_info.get("align_left", False)
+
+    timer_surf = font_avatar.render(timer_text, True, (0, 0, 0))
+    timer_width, timer_height = timer_surf.get_size()
+    gap = 8
+    if align_left:
+        timer_x = name_rect.left - timer_width - gap
+    else:
+        timer_x = name_rect.right + gap
+    timer_y = name_rect.y
+    shadow = font_avatar.render(timer_text, True, (0, 0, 0))
+    surface.blit(shadow, (timer_x + 1, timer_y + 1))
+    surface.blit(timer_surf, (timer_x, timer_y))
+    return pygame.Rect(timer_x, timer_y, timer_width, timer_height)
 
 
 def get_bottom_avatar_rect():
@@ -193,7 +221,9 @@ def get_top_avatar_rect():
     return rect
 
 
-def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, font_avatar):
+def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, font_avatar, timer_labels=None):
+    timer_labels = timer_labels or {}
+    timer_rects = {}
     last_sel = profiles_data.get("last_selected", {})
     if mode == "pvp":
         pvp_info = last_sel.get("pvp", {})
@@ -206,7 +236,7 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
         top_rect = get_top_avatar_rect()
         if red_player:
             draw_profile_avatar(surface, red_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-            _draw_avatar_caption(
+            caption = _draw_avatar_caption(
                 surface,
                 bottom_rect,
                 red_player.get("display_name", "Player 1"),
@@ -214,9 +244,12 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
                 (200, 40, 40),
                 font_avatar,
             )
+            red_timer = _draw_timer_for_caption(surface, font_avatar, caption, timer_labels.get("red"))
+            if red_timer:
+                timer_rects["red"] = red_timer
         if black_player:
             draw_profile_avatar(surface, black_player, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-            _draw_avatar_caption(
+            caption = _draw_avatar_caption(
                 surface,
                 top_rect,
                 black_player.get("display_name", "Player 2"),
@@ -225,6 +258,9 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
                 font_avatar,
                 align_left=True,
             )
+            black_timer = _draw_timer_for_caption(surface, font_avatar, caption, timer_labels.get("black"))
+            if black_timer:
+                timer_rects["black"] = black_timer
     elif mode == "ai":
         ai_info = last_sel.get("ai", {})
         human_id = ai_info.get("human_player_id", "p1")
@@ -233,7 +269,7 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
         top_rect = get_top_avatar_rect()
         if human_player:
             draw_profile_avatar(surface, human_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-            _draw_avatar_caption(
+            caption = _draw_avatar_caption(
                 surface,
                 bottom_rect,
                 human_player.get("display_name", "Player 1"),
@@ -241,11 +277,14 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
                 (200, 40, 40),
                 font_avatar,
             )
+            human_timer = _draw_timer_for_caption(surface, font_avatar, caption, timer_labels.get("red"))
+            if human_timer:
+                timer_rects["red"] = human_timer
         if AI_LEVELS:
             ai_idx = ai_level_index % len(AI_LEVELS)
             ai_cfg = AI_LEVELS[ai_idx]
             draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-            _draw_avatar_caption(
+            caption = _draw_avatar_caption(
                 surface,
                 top_rect,
                 ai_cfg.get("name", "AI"),
@@ -254,3 +293,7 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
                 font_avatar,
                 align_left=True,
             )
+            ai_timer = _draw_timer_for_caption(surface, font_avatar, caption, timer_labels.get("black"))
+            if ai_timer:
+                timer_rects["black"] = ai_timer
+    return timer_rects
