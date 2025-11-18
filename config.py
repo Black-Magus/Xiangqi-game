@@ -1,8 +1,8 @@
 BOARD_COLS = 9
 BOARD_ROWS = 10
 
-CELL_SIZE = 57
-MARGIN_X = 40
+CELL_SIZE = 58
+MARGIN_X = 50
 MARGIN_Y = 120
 BOARD_OFFSET_Y = 20  # push only the board area lower without shifting other UI
 

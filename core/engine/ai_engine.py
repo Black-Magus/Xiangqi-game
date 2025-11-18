@@ -27,6 +27,7 @@ AI_LEVELS = [
         "depth": 1,
         "randomness": 0.9,
         "avatar_path": "ai_casual.jpg",
+        "elo": 900,
     },
     {
         "name": "Pro Bot",
@@ -35,6 +36,7 @@ AI_LEVELS = [
         "depth": 1,
         "randomness": 0.2,
         "avatar_path": "ai_soldier.jpg",
+        "elo": 1200,
     },
     {
         "name": "Hacker Bot",
@@ -43,6 +45,7 @@ AI_LEVELS = [
         "depth": 2,
         "randomness": 0.0,
         "avatar_path": "ai_general.jpg",
+        "elo": 1500,
     },
 ]
 

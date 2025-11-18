@@ -5,7 +5,7 @@ from core.engine.types import Side, PieceType
 
 from data.themes import BOARD_THEMES, PIECE_THEMES
 from data.avatar_assets import AVATAR_BOARD_SIZE, get_piece_sprite, load_avatar_image, load_board_image
-from core.profiles_manager import find_player
+from core.profiles_manager import DEFAULT_ELO, find_player
 from core.engine.ai_engine import AI_LEVELS
 from core.settings_manager import Settings
 
@@ -154,9 +154,32 @@ def draw_ai_avatar(surface, ai_level_cfg, center, size, font_avatar):
         surface.blit(text, text_rect)
 
 
+def _draw_text_with_shadow(surface, font, text, color, pos):
+    shadow = font.render(text, True, (0, 0, 0))
+    surface.blit(shadow, (pos[0] + 1, pos[1] + 1))
+    surf = font.render(text, True, color)
+    surface.blit(surf, pos)
+
+
+def _draw_avatar_caption(surface, rect, name, elo_value, name_color, font_avatar, align_left=False):
+    if not name:
+        return
+    name_text = str(name)
+    elo_text = f"ELO: {int(round(elo_value))}"
+
+    max_width = max(font_avatar.size(name_text)[0], font_avatar.size(elo_text)[0])
+    pad = 10
+    base_x = rect.left - max_width - pad if align_left else rect.right + pad
+    name_y = rect.centery - font_avatar.get_height() + 4
+    elo_y = rect.centery + 4
+
+    _draw_text_with_shadow(surface, font_avatar, name_text, name_color, (base_x, name_y))
+    _draw_text_with_shadow(surface, font_avatar, elo_text, (50, 50, 50), (base_x, elo_y))
+
+
 def get_bottom_avatar_rect():
     rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
-    cx = MARGIN_X - AVATAR_BOARD_SIZE // 2 + 90
+    cx = MARGIN_X - AVATAR_BOARD_SIZE // 2 + 40
     cy = BOARD_TOP + (BOARD_ROWS - 1) * CELL_SIZE + CELL_SIZE // 2 + 60
     rect.center = (cx, cy)
     return rect
@@ -164,7 +187,7 @@ def get_bottom_avatar_rect():
 
 def get_top_avatar_rect():
     rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
-    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE + AVATAR_BOARD_SIZE // 2 - 90
+    cx = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE + AVATAR_BOARD_SIZE // 2 - 40
     cy = BOARD_TOP + CELL_SIZE // 2 - 115
     rect.center = (cx, cy)
     return rect
@@ -183,8 +206,25 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
         top_rect = get_top_avatar_rect()
         if red_player:
             draw_profile_avatar(surface, red_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_avatar_caption(
+                surface,
+                bottom_rect,
+                red_player.get("display_name", "Player 1"),
+                red_player.get("elo", DEFAULT_ELO),
+                (200, 40, 40),
+                font_avatar,
+            )
         if black_player:
             draw_profile_avatar(surface, black_player, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_avatar_caption(
+                surface,
+                top_rect,
+                black_player.get("display_name", "Player 2"),
+                black_player.get("elo", DEFAULT_ELO),
+                (30, 30, 120),
+                font_avatar,
+                align_left=True,
+            )
     elif mode == "ai":
         ai_info = last_sel.get("ai", {})
         human_id = ai_info.get("human_player_id", "p1")
@@ -193,5 +233,24 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
         top_rect = get_top_avatar_rect()
         if human_player:
             draw_profile_avatar(surface, human_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-        ai_cfg = AI_LEVELS[ai_level_index]
-        draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_avatar_caption(
+                surface,
+                bottom_rect,
+                human_player.get("display_name", "Player 1"),
+                human_player.get("elo", DEFAULT_ELO),
+                (200, 40, 40),
+                font_avatar,
+            )
+        if AI_LEVELS:
+            ai_idx = ai_level_index % len(AI_LEVELS)
+            ai_cfg = AI_LEVELS[ai_idx]
+            draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_avatar_caption(
+                surface,
+                top_rect,
+                ai_cfg.get("name", "AI"),
+                ai_cfg.get("elo", DEFAULT_ELO),
+                (30, 30, 120),
+                font_avatar,
+                align_left=True,
+            )

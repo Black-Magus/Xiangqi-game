@@ -78,6 +78,7 @@ TEXT = {
         "label_red_player": "RED: {name}",
         "label_black_player": "BLACK: {name}",
         "label_ai_player": "AI: {name}",
+        "label_elo": "ELO: {elo}",
     },
     "vi": {
         "title": "Cờ tướng",
@@ -158,6 +159,7 @@ TEXT = {
         "label_red_player": "ĐỎ: {name}",
         "label_black_player": "ĐEN: {name}",
         "label_ai_player": "AI: {name}",
+        "label_elo": "ELO: {elo}",
     },
 }
 

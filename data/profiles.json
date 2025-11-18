@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "players": [
     {
       "id": "p1",
@@ -12,7 +12,7 @@
           50
         ],
         "symbol": "C",
-        "path": "player1.png"
+        "path": "player2.png"
       },
       "stats": {
         "overall": {
@@ -33,7 +33,8 @@
           "losses": 1,
           "draws": 1
         }
-      }
+      },
+      "elo": 1200
     },
     {
       "id": "p2",
@@ -67,7 +68,8 @@
           "losses": 4,
           "draws": 0
         }
-      }
+      },
+      "elo": 1200
     }
   ],
   "last_selected": {

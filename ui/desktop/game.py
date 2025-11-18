@@ -16,7 +16,7 @@ from data.localisation import TEXT, PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, t
 from data.themes import BOARD_THEMES, PIECE_THEMES
 from core.settings_manager import Settings, load_settings, save_settings
 from data.avatar_assets import BUILTIN_AVATARS, get_piece_sprite
-from core.profiles_manager import load_profiles, save_profiles, find_player, apply_game_result_to_profiles
+from core.profiles_manager import DEFAULT_ELO, load_profiles, save_profiles, find_player, apply_game_result_to_profiles
 from core.engine.constants import AI_SIDE, HUMAN_SIDE
 from core.engine.ai_engine import AI_LEVELS, choose_ai_move
 from core.ui_components import Button
@@ -417,7 +417,7 @@ def run_game():
             return
         if mode not in ("pvp", "ai"):
             return
-        apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw)
+        apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw, ai_level_index)
         result_recorded = True
 
     def rebuild_position_from_replay_index():
@@ -1365,6 +1365,11 @@ def run_game():
                     name_surf = font_text.render(name, True, (240, 240, 240))
                     screen.blit(name_surf, (start_x + 40, y))
 
+                    elo_value = int(p.get("elo", DEFAULT_ELO))
+                    elo_label = t(settings, "label_elo").format(elo=elo_value)
+                    elo_surf = font_text.render(elo_label, True, (210, 210, 210))
+                    screen.blit(elo_surf, (start_x + 40, y + 18))
+
                     stats = p.get("stats", {})
                     ov = stats.get("overall", {"games": 0, "wins": 0, "losses": 0, "draws": 0})
                     ai_stats = stats.get("vs_ai", {"games": 0, "wins": 0, "losses": 0, "draws": 0})
@@ -1384,7 +1389,7 @@ def run_game():
                     ai_l1, ai_l2 = fmt_block(vs_ai_label, ai_stats)
                     hv_l1, hv_l2 = fmt_block(vs_human_label, hv)
 
-                    y_line = y + 24
+                    y_line = y + 36
                     for line in [ov_l1, ov_l2, ai_l1, ai_l2, hv_l1, hv_l2]:
                         ls = font_text.render(line, True, (220, 220, 220))
                         screen.blit(ls, (start_x + 40, y_line))
