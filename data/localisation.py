@@ -25,6 +25,9 @@ TEXT = {
         "turn_red": "Turn: RED",
         "turn_black": "Turn: BLACK",
 
+        "timer_modal_title": "Match timer",
+        "timer_modal_subtitle": "Choose how much time each side gets",
+
         "check_on_red": "CHECK on RED",
         "check_on_black": "CHECK on BLACK",
         "red_wins": "RED wins",
@@ -105,6 +108,9 @@ TEXT = {
         "mode_ai": "Chế độ: Chơi với máy",
         "turn_red": "Lượt: ĐỎ",
         "turn_black": "Lượt: ĐEN",
+
+        "timer_modal_title": "Thời gian ván đấu",
+        "timer_modal_subtitle": "Chọn thời gian cho mỗi bên",
 
         "check_on_red": "Chiếu tướng ĐỎ",
         "check_on_black": "Chiếu tướng ĐEN",

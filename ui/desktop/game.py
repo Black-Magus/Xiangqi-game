@@ -1,3 +1,4 @@
+import os
 import pygame
 
 from config import (
@@ -15,7 +16,7 @@ from core.engine.types import Side, Move, PieceType
 from data.localisation import TEXT, PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, t
 from data.themes import BOARD_THEMES, PIECE_THEMES
 from core.settings_manager import Settings, load_settings, save_settings
-from data.avatar_assets import BUILTIN_AVATARS, get_piece_sprite
+from data.avatar_assets import ASSETS_DIR, BUILTIN_AVATARS, get_piece_sprite
 from core.profiles_manager import DEFAULT_ELO, load_profiles, save_profiles, find_player, apply_game_result_to_profiles
 from core.engine.constants import AI_SIDE, HUMAN_SIDE
 from core.engine.ai_engine import AI_LEVELS, choose_ai_move
@@ -130,12 +131,13 @@ def run_game():
     font_button = pygame.font.SysFont("Consolas", 16)
     font_title = pygame.font.SysFont("SimHei", 40, bold=True)
     font_avatar = pygame.font.SysFont("Consolas", 16, bold=True)
+    font_timer = pygame.font.SysFont("Consolas", 24, bold=True)
 
     TIMER_CHOICES = [
-        ("1:00", 60),
-        ("5:00", 300),
-        ("10:00", 600),
-        ("∞", None),
+        {"label": "1:00", "seconds": 60, "asset": os.path.join("avatars", "ai_soldier.jpg")},
+        {"label": "5:00", "seconds": 300, "asset": os.path.join("avatars", "ai_casual.jpg")},
+        {"label": "10:00", "seconds": 600, "asset": os.path.join("avatars", "ai_general.jpg")},
+        {"label": "∞", "seconds": None, "asset": os.path.join("boards", "classic.png")},
     ]
 
     board = Board()
@@ -166,10 +168,12 @@ def run_game():
 
     timer_option_index = len(TIMER_CHOICES) - 1  # default unlimited
     time_remaining = {
-        Side.RED: TIMER_CHOICES[timer_option_index][1],
-        Side.BLACK: TIMER_CHOICES[timer_option_index][1],
+        Side.RED: TIMER_CHOICES[timer_option_index]["seconds"],
+        Side.BLACK: TIMER_CHOICES[timer_option_index]["seconds"],
     }
     timer_rects_current = {}
+    timer_modal_open = False
+    timer_thumbnail_cache = {}
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
 
@@ -402,7 +406,7 @@ def run_game():
         if not TIMER_CHOICES:
             return None
         idx = idx % len(TIMER_CHOICES)
-        return TIMER_CHOICES[idx][1]
+        return TIMER_CHOICES[idx]["seconds"]
 
     def reset_timers_to_full():
         nonlocal time_remaining
@@ -433,10 +437,67 @@ def run_game():
             return not ai_match_started
         return len(move_history) == 0
 
-    def cycle_timer_option():
+    def set_timer_option(idx: int):
         nonlocal timer_option_index
-        timer_option_index = (timer_option_index + 1) % len(TIMER_CHOICES)
+        timer_option_index = idx % len(TIMER_CHOICES)
         reset_timers_to_full()
+
+    def cycle_timer_option():
+        set_timer_option(timer_option_index + 1)
+
+    def load_timer_thumbnail(asset_rel, size):
+        key = (asset_rel, size)
+        if key in timer_thumbnail_cache:
+            return timer_thumbnail_cache[key]
+        full_path = os.path.join(ASSETS_DIR, asset_rel)
+        surf = None
+        if os.path.exists(full_path):
+            try:
+                img = pygame.image.load(full_path)
+                if img.get_alpha() is not None:
+                    img = img.convert_alpha()
+                else:
+                    img = img.convert()
+                surf = pygame.transform.smoothscale(img, size)
+            except Exception:
+                surf = None
+        if surf is None:
+            surf = pygame.Surface(size)
+            surf.fill((80, 80, 80))
+            pygame.draw.rect(surf, (30, 30, 30), surf.get_rect(), 2)
+        timer_thumbnail_cache[key] = surf
+        return surf
+
+    def build_timer_modal_layout():
+        modal_width = 520
+        modal_height = 360
+        modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
+        modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+
+        padding = 20
+        header_height = 90
+        cols = 2
+        card_w = (modal_width - (cols + 1) * padding) // cols
+        card_h = 120
+        options = []
+        for idx, choice in enumerate(TIMER_CHOICES):
+            row = idx // cols
+            col = idx % cols
+            x = modal_rect.x + padding + col * (card_w + padding)
+            y = modal_rect.y + header_height + row * (card_h + padding)
+            rect = pygame.Rect(x, y, card_w, card_h)
+            thumb_rect = pygame.Rect(rect.x + 10, rect.y + 10, rect.width - 20, 70)
+            options.append(
+                {
+                    "index": idx,
+                    "choice": choice,
+                    "rect": rect,
+                    "thumb_rect": thumb_rect,
+                }
+            )
+
+        close_rect = pygame.Rect(modal_rect.right - 78, modal_rect.top + 16, 60, 26)
+        return {"modal_rect": modal_rect, "options": options, "close_rect": close_rect}
 
     def to_game_coords(pos):
         if render_scale <= 0:
@@ -450,7 +511,7 @@ def run_game():
 
     def reset_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack
-        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started
+        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, timer_modal_open
         board.reset()
         current_side = Side.RED
         selected = None
@@ -464,6 +525,7 @@ def run_game():
         replay_index = None
         paused = False
         ai_match_started = False
+        timer_modal_open = False
         reset_timers_to_full()
 
     def register_result_if_needed(winner_side, is_draw=False):
@@ -528,6 +590,8 @@ def run_game():
             return False
         if paused or game_over:
             return False
+        if timer_modal_open:
+            return False
         if replay_index is not None:
             return False
         if state == "ai":
@@ -590,7 +654,9 @@ def run_game():
             # ESC key logic
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
-                    if state == "settings":
+                    if timer_modal_open:
+                        timer_modal_open = False
+                    elif state == "settings":
                         settings_open_dropdown = None
                         if settings_page == "stats":
                             settings_page = "main"
@@ -606,9 +672,35 @@ def run_game():
             # Choose avatar logic
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my, inside_game = to_game_coords(event.pos)
+                btn = event.button
+
+                if timer_modal_open:
+                    layout = build_timer_modal_layout()
+                    if not can_change_timer():
+                        timer_modal_open = False
+                        continue
+                    if btn == 1:
+                        if not layout["modal_rect"].collidepoint(mx, my):
+                            timer_modal_open = False
+                            continue
+                        if layout["close_rect"].collidepoint(mx, my):
+                            timer_modal_open = False
+                            continue
+                        clicked_option = None
+                        for opt in layout["options"]:
+                            if opt["rect"].collidepoint(mx, my) or opt["thumb_rect"].collidepoint(mx, my):
+                                clicked_option = opt["index"]
+                                break
+                        if clicked_option is not None:
+                            set_timer_option(clicked_option)
+                            timer_modal_open = False
+                            continue
+                        continue
+                    else:
+                        continue
+
                 if not inside_game:
                     continue
-                btn = event.button
 
                 # Scroll move log with wheel
                 if btn in (4, 5) and state in ("pvp", "ai") and log_active_tab == "moves" and log_box_rect_current is not None:
@@ -692,7 +784,7 @@ def run_game():
                     if btn == 1 and timer_rects_current and can_change_timer():
                         if timer_rects_current.get("red", pygame.Rect(0, 0, 0, 0)).collidepoint(mx, my) or \
                            timer_rects_current.get("black", pygame.Rect(0, 0, 0, 0)).collidepoint(mx, my):
-                            cycle_timer_option()
+                            timer_modal_open = True
                             continue
 
                 if btn != 1:
@@ -947,6 +1039,7 @@ def run_game():
                     mode,
                     ai_level_index,
                     font_avatar,
+                    font_timer,
                     timer_labels=timer_labels_dict(),
                 )
             if btn_log_tab_moves.is_clicked((mx, my)):
@@ -1500,6 +1593,54 @@ def run_game():
                 btn_settings_back.label = t(settings, "btn_back")
                 btn_settings_back.rect.center = (settings_center_x, WINDOW_HEIGHT - 70)
                 btn_settings_back.draw(screen, font_button, enabled=True)
+        # Timer modal rendering
+        if timer_modal_open and can_change_timer():
+            overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 160))
+            screen.blit(overlay, (0, 0))
+
+            layout = build_timer_modal_layout()
+            modal_rect = layout["modal_rect"]
+
+            pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=12)
+
+            title_text = lang_text.get("timer_modal_title", "Match timer")
+            subtitle_text = lang_text.get("timer_modal_subtitle", "Choose how much time each side gets")
+
+            title_surf = font_title.render(title_text, True, (25, 25, 25))
+            title_rect = title_surf.get_rect(midtop=(modal_rect.centerx, modal_rect.top + 16))
+            screen.blit(title_surf, title_rect)
+
+            subtitle_surf = font_text.render(subtitle_text, True, (60, 60, 60))
+            subtitle_rect = subtitle_surf.get_rect(midtop=(modal_rect.centerx, title_rect.bottom + 6))
+            screen.blit(subtitle_surf, subtitle_rect)
+
+            close_rect = layout["close_rect"]
+            pygame.draw.rect(screen, (225, 225, 225), close_rect, border_radius=6)
+            pygame.draw.rect(screen, (90, 90, 90), close_rect, 1, border_radius=6)
+            close_label = lang_text.get("btn_back", "Back")
+            close_surf = font_button.render(close_label, True, (20, 20, 20))
+            close_surf_rect = close_surf.get_rect(center=close_rect.center)
+            screen.blit(close_surf, close_surf_rect)
+
+            for opt in layout["options"]:
+                rect = opt["rect"]
+                thumb_rect = opt["thumb_rect"]
+                choice = opt["choice"]
+                is_selected = opt["index"] == timer_option_index
+                bg = (235, 235, 235) if is_selected else (220, 220, 220)
+                border_color = (190, 60, 60) if is_selected else (90, 90, 90)
+                pygame.draw.rect(screen, bg, rect, border_radius=10)
+                pygame.draw.rect(screen, border_color, rect, 2, border_radius=10)
+
+                thumb = load_timer_thumbnail(choice["asset"], (thumb_rect.width, thumb_rect.height))
+                if thumb is not None:
+                    screen.blit(thumb, thumb_rect)
+
+                label_surf = font_timer.render(choice["label"], True, (25, 25, 25))
+                label_rect = label_surf.get_rect(midtop=(rect.centerx, thumb_rect.bottom + 6))
+                screen.blit(label_surf, label_rect)
         # Paused modal rendering
         if paused:
             # Overlay
