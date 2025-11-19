@@ -25,6 +25,8 @@ from core.engine.draw_helpers import (
     draw_board,
     draw_selection,
     draw_move_hints,
+    draw_move_origin,
+    draw_piece_preview,
     draw_side_avatars_on_board,
     draw_profile_avatar,
     draw_ai_avatar,
@@ -149,6 +151,7 @@ def run_game():
     in_check_side = None
     game_over = False
     winner = None
+    hovered_move = None
     result_recorded = False
     replay_index = None
     paused = False 
@@ -510,7 +513,7 @@ def run_game():
         return int(gx), int(ly), inside
 
     def reset_game():
-        nonlocal current_side, selected, valid_moves, move_history, redo_stack
+        nonlocal current_side, selected, valid_moves, move_history, redo_stack, hovered_move
         nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, timer_modal_open
         board.reset()
         current_side = Side.RED
@@ -521,12 +524,30 @@ def run_game():
         in_check_side = None
         game_over = False
         winner = None
+        hovered_move = None
         result_recorded = False
         replay_index = None
         paused = False
         ai_match_started = False
         timer_modal_open = False
         reset_timers_to_full()
+
+    def update_hover_preview(mx, my, inside):
+        nonlocal hovered_move
+        if not inside:
+            hovered_move = None
+            return
+        if state not in ("pvp", "ai") or paused or game_over:
+            hovered_move = None
+            return
+        if selected is None or not valid_moves:
+            hovered_move = None
+            return
+        col, row = screen_to_board(mx, my)
+        if col is None:
+            hovered_move = None
+            return
+        hovered_move = (col, row) if (col, row) in valid_moves else None
 
     def register_result_if_needed(winner_side, is_draw=False):
         nonlocal result_recorded
@@ -575,10 +596,11 @@ def run_game():
                 winner = None
 
     def switch_to_menu():
-        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded, ai_match_started
+        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded, ai_match_started, hovered_move
         state = "menu"
         selected = None
         valid_moves = []
+        hovered_move = None
         in_check_side = None
         game_over = False
         winner = None
@@ -599,7 +621,7 @@ def run_game():
         return len(move_history) > 0
 
     def handle_timeout(side: Side):
-        nonlocal game_over, winner, selected, valid_moves, in_check_side, replay_index
+        nonlocal game_over, winner, selected, valid_moves, in_check_side, replay_index, hovered_move
         if game_over:
             return
         game_over = True
@@ -608,12 +630,13 @@ def run_game():
         in_check_side = None
         selected = None
         valid_moves = []
+        hovered_move = None
         register_result_if_needed(winner_side, False)
         replay_index = len(move_history)
 
     def ai_make_move():
         nonlocal current_side, move_history, redo_stack, game_over, winner
-        nonlocal in_check_side, selected, valid_moves
+        nonlocal in_check_side, selected, valid_moves, hovered_move
         nonlocal log_follow_latest
         if game_over or current_side != AI_SIDE or not ai_match_started:
             return
@@ -639,6 +662,7 @@ def run_game():
         log_follow_latest = True
         selected = None
         valid_moves = []
+        hovered_move = None
 
         current_side = HUMAN_SIDE
         update_game_state_after_side_change()
@@ -669,6 +693,9 @@ def run_game():
                 window_mode_size = (event.w, event.h)
                 window_surface = pygame.display.get_surface()
                 recompute_render_scale()
+            elif event.type == pygame.MOUSEMOTION:
+                mx, my, inside_game = to_game_coords(event.pos)
+                update_hover_preview(mx, my, inside_game)
             # Choose avatar logic
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my, inside_game = to_game_coords(event.pos)
@@ -884,6 +911,13 @@ def run_game():
 
                     ai_input_locked = state == "ai" and not ai_match_started
 
+                    if btn_log_tab_moves.is_clicked((mx, my)):
+                        log_active_tab = "moves"
+                        continue
+                    if btn_log_tab_captured.is_clicked((mx, my)):
+                        log_active_tab = "captured"
+                        continue
+
                     # Setting button clicked
                     if btn_in_game_settings.is_clicked((mx, my)):
                         settings_return_state = state
@@ -969,15 +1003,18 @@ def run_game():
                             else:
                                 selected = None
                                 valid_moves = []
+                            hovered_move = None
                         else:
                             sel_c, sel_r = selected
                             if col == sel_c and row == sel_r:
                                 selected = None
                                 valid_moves = []
+                                hovered_move = None
                             else:
                                 if piece is not None and piece.side == current_side:
                                     selected = (col, row)
                                     valid_moves = board.generate_legal_moves(col, row, current_side)
+                                    update_hover_preview(mx, my, True)
                                 else:
                                     if (col, row) in valid_moves:
                                         moving_piece = board.get_piece(sel_c, sel_r)
@@ -992,6 +1029,7 @@ def run_game():
                                         update_game_state_after_side_change()
                                     selected = None
                                     valid_moves = []
+                                    hovered_move = None
 
         if state == "ai" and ai_match_started and not game_over and not paused and current_side == AI_SIDE:
             ai_make_move()
@@ -1042,30 +1080,59 @@ def run_game():
                     font_timer,
                     timer_labels=timer_labels_dict(),
                 )
-            if btn_log_tab_moves.is_clicked((mx, my)):
-                log_active_tab = "moves"
-                continue
-            if btn_log_tab_captured.is_clicked((mx, my)):
-                log_active_tab = "captured"
-                continue
-
-            if btn_in_game_settings.is_clicked((mx, my)):
-                settings_return_state = state
-                settings_page = "main"
-                settings_open_dropdown = None
-                state = "settings"
-                continue
-
 
             if selected is not None:
                 draw_selection(screen, *selected)
-                draw_move_hints(screen, valid_moves)            
+                draw_move_hints(screen, valid_moves)
+
+            last_highlight = None
+            last_origin = None
+            capturable_targets = set()
+            if move_history:
+                idx = replay_index - 1 if replay_index is not None else len(move_history) - 1
+                if idx >= 0:
+                    last_mv = move_history[idx]
+                    hl_color = (0, 180, 0) if last_mv.piece.side == Side.RED else (200, 0, 0)
+                    last_highlight = {"pos": last_mv.to_pos, "color": hl_color}
+                    origin_color = (0, 180, 0) if last_mv.piece.side == Side.RED else (200, 0, 0)
+                    last_origin = {"pos": last_mv.from_pos, "color": origin_color}
+
+            if selected and valid_moves:
+                sel_piece = board.get_piece(*selected)
+                if sel_piece is not None:
+                    for mv in valid_moves:
+                        dest_piece = board.get_piece(*mv)
+                        if dest_piece is not None and dest_piece.side != sel_piece.side:
+                            capturable_targets.add(mv)
+
+            if last_origin:
+                c_from, r_from = last_origin["pos"]
+                draw_move_origin(screen, c_from, r_from, last_origin["color"])
+
             for r in range(BOARD_ROWS):
                 for c in range(BOARD_COLS):
                     piece = board.get_piece(c, r)
                     if piece is not None:
                         from core.engine.draw_helpers import draw_piece  
-                        draw_piece(screen, piece, c, r, font_piece, settings)
+                        highlight_color = None
+                        if last_highlight and last_highlight["pos"] == (c, r):
+                            highlight_color = last_highlight["color"]
+                        if (c, r) in capturable_targets:
+                            highlight_color = (255, 215, 0)
+                        draw_piece(screen, piece, c, r, font_piece, settings, highlight_color=highlight_color)
+
+            if hovered_move and selected is not None:
+                sel_piece = board.get_piece(*selected)
+                if sel_piece is not None:
+                    draw_piece_preview(
+                        screen,
+                        sel_piece,
+                        hovered_move[0],
+                        hovered_move[1],
+                        font_piece,
+                        settings,
+                        alpha=130,
+                    )
 
             mode_text = lang_text["mode_pvp"] if mode == "pvp" else lang_text["mode_ai"]
             mt_surf = font_text.render(mode_text, True, (0, 0, 0))

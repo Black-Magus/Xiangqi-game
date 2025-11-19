@@ -66,9 +66,21 @@ def draw_board(surface, settings: Settings):
     pygame.draw.rect(surface, river_color, river_rect)
 
 
-def draw_piece(surface, piece, col, row, font, settings: Settings):
+def draw_piece(surface, piece, col, row, font, settings: Settings, highlight_color=None):
     x, y = board_to_screen(col, row)
     size = int(CELL_SIZE * 0.9)
+    if highlight_color:
+        max_radius = CELL_SIZE // 2 + 8
+        glow_surf = pygame.Surface((max_radius * 2, max_radius * 2), pygame.SRCALPHA)
+        center = (max_radius, max_radius)
+        layers = 4
+        for i in range(layers):
+            radius = max_radius - i * 3
+            blend = i / (layers - 1) if layers > 1 else 1.0
+            alpha = int(40 + (160 - 40) * blend)
+            pygame.draw.circle(glow_surf, (*highlight_color, alpha), center, radius)
+        glow_rect = glow_surf.get_rect(center=(x, y))
+        surface.blit(glow_surf, glow_rect)
 
     # Draw piece sprite
     sprite = get_piece_sprite(piece, settings, size)
@@ -117,6 +129,57 @@ def draw_move_hints(surface, moves):
     for c, r in moves:
         x, y = board_to_screen(c, r)
         pygame.draw.circle(surface, (0, 150, 0), (x, y), 6)
+
+
+def draw_move_origin(surface, col, row, color):
+    x, y = board_to_screen(col, row)
+    pygame.draw.circle(surface, color, (x, y), 9)
+
+
+def draw_piece_preview(surface, piece, col, row, font, settings: Settings, alpha=120):
+    x, y = board_to_screen(col, row)
+    size = int(CELL_SIZE * 0.9)
+    sprite = get_piece_sprite(piece, settings, size)
+    if sprite is not None:
+        preview = sprite.copy()
+        preview.set_alpha(alpha)
+        rect = preview.get_rect(center=(x, y))
+        surface.blit(preview, rect)
+        return
+
+    theme = PIECE_THEMES[settings.piece_theme_index]
+    color = theme["red_color"] if piece.side == Side.RED else theme["black_color"]
+    bg_color = (245, 230, 200, alpha)
+    outline_color = (*color, alpha)
+
+    surf = pygame.Surface((CELL_SIZE, CELL_SIZE), pygame.SRCALPHA)
+    radius = CELL_SIZE // 2 - 4
+    center = (CELL_SIZE // 2, CELL_SIZE // 2)
+    pygame.draw.circle(surf, bg_color, center, radius)
+    pygame.draw.circle(surf, outline_color, center, radius, 2)
+
+    if piece.ptype == PieceType.GENERAL:
+        text = "帥" if piece.side == Side.RED else "將"
+    elif piece.ptype == PieceType.ADVISOR:
+        text = "仕" if piece.side == Side.RED else "士"
+    elif piece.ptype == PieceType.ELEPHANT:
+        text = "相" if piece.side == Side.RED else "象"
+    elif piece.ptype == PieceType.HORSE:
+        text = "傌" if piece.side == Side.RED else "馬"
+    elif piece.ptype == PieceType.ROOK:
+        text = "俥" if piece.side == Side.RED else "車"
+    elif piece.ptype == PieceType.CANNON:
+        text = "炮" if piece.side == Side.RED else "砲"
+    else:
+        text = "兵" if piece.side == Side.RED else "卒"
+
+    text_surf = font.render(text, True, color)
+    text_surf.set_alpha(alpha)
+    text_rect = text_surf.get_rect(center=center)
+    surf.blit(text_surf, text_rect)
+
+    rect = surf.get_rect(center=(x, y))
+    surface.blit(surf, rect)
 
 
 def draw_profile_avatar(surface, profile, center, size, font_avatar):
