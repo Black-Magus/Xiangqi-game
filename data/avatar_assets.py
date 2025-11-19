@@ -12,6 +12,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
 ASSETS_DIR = os.path.join(PROJECT_ROOT, "assets")
 AVATAR_DIR = os.path.join(ASSETS_DIR, "avatars")
 BOARD_IMAGE_DIR = os.path.join(ASSETS_DIR, "boards")
+LOSS_BADGE_FILE = "loss_badge.png"
 
 _board_image_cache = {}
 
@@ -25,6 +26,7 @@ BUILTIN_AVATARS = [
 AVATAR_BOARD_SIZE = int(CELL_SIZE * 0.8)
 
 _avatar_cache = {}
+_loss_badge_cache = {}
 
 # Piece PNG assets
 PIECES_DIR = os.path.join(ASSETS_DIR, "pieces")
@@ -71,6 +73,44 @@ def load_avatar_image(path: str, size: int):
     img = pygame.transform.smoothscale(img, (size, size))
     _avatar_cache[key] = img
     return img
+
+
+def load_loss_badge(size: int):
+    key = size
+    if key in _loss_badge_cache:
+        return _loss_badge_cache[key]
+    path = os.path.join(AVATAR_DIR, LOSS_BADGE_FILE)
+    badge = None
+    if os.path.exists(path):
+        try:
+            img = pygame.image.load(path).convert_alpha()
+            badge = pygame.transform.smoothscale(img, (size, size))
+        except Exception:
+            badge = None
+    if badge is None:
+        badge = pygame.Surface((size, size), pygame.SRCALPHA)
+        center = (size // 2, size // 2)
+        radius = max(6, size // 2 - 2)
+        pygame.draw.circle(badge, (200, 45, 45), center, radius)
+        pygame.draw.circle(badge, (255, 255, 255), center, radius, 2)
+        offset = int(radius * 0.6)
+        width = max(2, size // 10)
+        pygame.draw.line(
+            badge,
+            (255, 255, 255),
+            (center[0] - offset, center[1] - offset),
+            (center[0] + offset, center[1] + offset),
+            width,
+        )
+        pygame.draw.line(
+            badge,
+            (255, 255, 255),
+            (center[0] - offset, center[1] + offset),
+            (center[0] + offset, center[1] - offset),
+            width,
+        )
+    _loss_badge_cache[key] = badge
+    return badge
 
 
 def select_avatar_file_dialog():

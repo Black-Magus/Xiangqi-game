@@ -161,6 +161,8 @@ def run_game():
     move_log_offset = 0        # index of first move currently displayed in log
     log_box_rect_current = None  # rect of the log box for handling mouse scroll
     log_follow_latest = True
+    loss_badge_anim_start = None
+    loss_badge_side = None
 
     state = "menu"
     mode = None
@@ -530,6 +532,8 @@ def run_game():
         paused = False
         ai_match_started = False
         timer_modal_open = False
+        loss_badge_anim_start = None
+        loss_badge_side = None
         reset_timers_to_full()
 
     def update_hover_preview(mx, my, inside):
@@ -558,10 +562,44 @@ def run_game():
         apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw, ai_level_index)
         result_recorded = True
 
-    def rebuild_position_from_replay_index():
-        nonlocal current_side, in_check_side
+    def start_loss_badge_animation(loser_side):
+        nonlocal loss_badge_anim_start, loss_badge_side
+        if loser_side not in (Side.RED, Side.BLACK):
+            return
+        loss_badge_side = loser_side
+        loss_badge_anim_start = pygame.time.get_ticks()
+
+    def loss_badge_scale_for(loser_side):
+        if loser_side not in (Side.RED, Side.BLACK):
+            return 1.0
+        if loss_badge_anim_start is None or loss_badge_side != loser_side:
+            return 1.0
+        elapsed = (pygame.time.get_ticks() - loss_badge_anim_start) / 1000.0
+        duration = 0.3
+        start_scale = 9
+        if elapsed <= 0:
+            return start_scale
+        if elapsed >= duration:
+            return 1.0
+        progress = min(1.0, elapsed / duration)
+        falloff = (1.0 - progress) * (1.0 - progress)
+        return 1.0 + (start_scale - 1.0) * falloff
+
+    def clamp_replay_index():
+        nonlocal replay_index
         if replay_index is None:
             return
+        if replay_index < 0:
+            replay_index = 0
+        elif replay_index > len(move_history):
+            replay_index = len(move_history)
+
+    def rebuild_position_from_replay_index():
+        nonlocal current_side, in_check_side, replay_index
+        if replay_index is None:
+            return
+
+        clamp_replay_index()
 
         board.reset()
         current_side = Side.RED
@@ -587,13 +625,14 @@ def run_game():
                     game_over = True
                     winner_side = Side.RED if current_side == Side.BLACK else Side.BLACK
                     winner = winner_side
+                    start_loss_badge_animation(current_side)
                     register_result_if_needed(winner_side, False)
                     replay_index = len(move_history)
-        else:
-            in_check_side = None
-            if not result_recorded:
-                game_over = False
-                winner = None
+            else:
+                in_check_side = None
+                if not result_recorded:
+                    game_over = False
+                    winner = None
 
     def switch_to_menu():
         nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded, ai_match_started, hovered_move
@@ -631,6 +670,7 @@ def run_game():
         selected = None
         valid_moves = []
         hovered_move = None
+        start_loss_badge_animation(side)
         register_result_if_needed(winner_side, False)
         replay_index = len(move_history)
 
@@ -646,6 +686,7 @@ def run_game():
             if board.is_in_check(AI_SIDE):
                 game_over = True
                 winner = HUMAN_SIDE
+                start_loss_badge_animation(AI_SIDE)
                 register_result_if_needed(HUMAN_SIDE, False)
                 replay_index = len(move_history)
             else:
@@ -963,6 +1004,7 @@ def run_game():
                                 current_side = Side.RED if current_side == Side.BLACK else Side.BLACK
                                 log_follow_latest = True
                             update_game_state_after_side_change()
+                            clamp_replay_index()
                         continue
                     # Resign clicked
                     if btn_resign.is_clicked((mx, my)):
@@ -975,6 +1017,7 @@ def run_game():
                             in_check_side = None
                             selected = None
                             valid_moves = []
+                            start_loss_badge_animation(current_side)
                             register_result_if_needed(winner_side, False)
                             replay_index = len(move_history)
                         continue
@@ -1071,6 +1114,13 @@ def run_game():
         elif state in ("pvp", "ai"):
             draw_board(screen, settings)
             if mode is not None:
+                loser_side = None
+                badge_scale = 1.0
+                if game_over and winner in (Side.RED, Side.BLACK):
+                    loser_side = Side.BLACK if winner == Side.RED else Side.RED
+                    if loss_badge_anim_start is None or loss_badge_side != loser_side:
+                        start_loss_badge_animation(loser_side)
+                    badge_scale = loss_badge_scale_for(loser_side)
                 timer_rects_current = draw_side_avatars_on_board(
                     screen,
                     profiles_data,
@@ -1079,6 +1129,8 @@ def run_game():
                     font_avatar,
                     font_timer,
                     timer_labels=timer_labels_dict(),
+                    loser_side=loser_side,
+                    loss_badge_scale=badge_scale,
                 )
 
             if selected is not None:
@@ -1089,8 +1141,9 @@ def run_game():
             last_origin = None
             capturable_targets = set()
             if move_history:
+                clamp_replay_index()
                 idx = replay_index - 1 if replay_index is not None else len(move_history) - 1
-                if idx >= 0:
+                if 0 <= idx < len(move_history):
                     last_mv = move_history[idx]
                     hl_color = (0, 180, 0) if last_mv.piece.side == Side.RED else (200, 0, 0)
                     last_highlight = {"pos": last_mv.to_pos, "color": hl_color}

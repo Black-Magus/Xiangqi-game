@@ -4,12 +4,14 @@ from config import BOARD_COLS, BOARD_ROWS, CELL_SIZE, MARGIN_X, MARGIN_Y, BOARD_
 from core.engine.types import Side, PieceType
 
 from data.themes import BOARD_THEMES, PIECE_THEMES
-from data.avatar_assets import AVATAR_BOARD_SIZE, get_piece_sprite, load_avatar_image, load_board_image
+from data.avatar_assets import AVATAR_BOARD_SIZE, get_piece_sprite, load_avatar_image, load_board_image, load_loss_badge
 from core.profiles_manager import DEFAULT_ELO, find_player
 from core.engine.ai_engine import AI_LEVELS
 from core.settings_manager import Settings
 
 BOARD_TOP = MARGIN_Y + BOARD_OFFSET_Y
+LOSS_BADGE_SIZE = int(AVATAR_BOARD_SIZE * 1.3)
+LOSS_BADGE_GAP = 6
 
 def board_to_screen(col, row):
     x = MARGIN_X + col * CELL_SIZE
@@ -33,10 +35,8 @@ def draw_board(surface, settings: Settings):
 
     img = load_board_image(theme)
     if img is not None:
-        # vùng bàn cờ
         board_w = (BOARD_COLS - 1) * CELL_SIZE
         board_h = (BOARD_ROWS - 1) * CELL_SIZE
-        # scale ảnh cho vừa vùng bàn
         scaled = pygame.transform.smoothscale(img, (board_w, board_h))
         surface.blit(scaled, (MARGIN_X, BOARD_TOP))
         return
@@ -277,6 +277,17 @@ def _draw_timer_for_caption(surface, font_timer, caption_info, timer_text):
     return box_rect
 
 
+def _draw_loss_badge(surface, avatar_rect, side: Side, loser_side, scale=1.0):
+    if loser_side is None or side != loser_side:
+        return
+    target_size = max(1, int(LOSS_BADGE_SIZE * max(0.1, scale)))
+    badge = load_loss_badge(target_size)
+    if badge is None:
+        return
+    badge_rect = badge.get_rect(center=avatar_rect.center)
+    surface.blit(badge, badge_rect)
+
+
 def get_bottom_avatar_rect():
     rect = pygame.Rect(0, 0, AVATAR_BOARD_SIZE, AVATAR_BOARD_SIZE)
     cx = MARGIN_X - AVATAR_BOARD_SIZE // 2 + 40
@@ -293,7 +304,17 @@ def get_top_avatar_rect():
     return rect
 
 
-def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, font_avatar, font_timer, timer_labels=None):
+def draw_side_avatars_on_board(
+    surface,
+    profiles_data,
+    mode,
+    ai_level_index,
+    font_avatar,
+    font_timer,
+    timer_labels=None,
+    loser_side=None,
+    loss_badge_scale=1.0,
+):
     timer_labels = timer_labels or {}
     timer_rects = {}
     last_sel = profiles_data.get("last_selected", {})
@@ -308,6 +329,7 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
         top_rect = get_top_avatar_rect()
         if red_player:
             draw_profile_avatar(surface, red_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_loss_badge(surface, bottom_rect, Side.RED, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
                 bottom_rect,
@@ -321,6 +343,7 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
                 timer_rects["red"] = red_timer
         if black_player:
             draw_profile_avatar(surface, black_player, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_loss_badge(surface, top_rect, Side.BLACK, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
                 top_rect,
@@ -341,6 +364,7 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
         top_rect = get_top_avatar_rect()
         if human_player:
             draw_profile_avatar(surface, human_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_loss_badge(surface, bottom_rect, Side.RED, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
                 bottom_rect,
@@ -356,6 +380,7 @@ def draw_side_avatars_on_board(surface, profiles_data, mode, ai_level_index, fon
             ai_idx = ai_level_index % len(AI_LEVELS)
             ai_cfg = AI_LEVELS[ai_idx]
             draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_loss_badge(surface, top_rect, Side.BLACK, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
                 top_rect,
