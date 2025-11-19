@@ -32,6 +32,7 @@ from core.engine.draw_helpers import (
     draw_ai_avatar,
     get_bottom_avatar_rect,
     get_top_avatar_rect,
+    board_to_screen,
     screen_to_board,
 )
 from data.avatar_assets import select_avatar_file_dialog
@@ -163,6 +164,10 @@ def run_game():
     log_follow_latest = True
     loss_badge_anim_start = None
     loss_badge_side = None
+    slash_image = None
+    slash_anim_start = None
+    slash_anim_side = None
+    slash_anim_pos = None
 
     state = "menu"
     mode = None
@@ -517,6 +522,7 @@ def run_game():
     def reset_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack, hovered_move
         nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, timer_modal_open
+        nonlocal slash_anim_start, slash_anim_side, slash_anim_pos
         board.reset()
         current_side = Side.RED
         selected = None
@@ -534,6 +540,9 @@ def run_game():
         timer_modal_open = False
         loss_badge_anim_start = None
         loss_badge_side = None
+        slash_anim_start = None
+        slash_anim_side = None
+        slash_anim_pos = None
         reset_timers_to_full()
 
     def update_hover_preview(mx, my, inside):
@@ -562,12 +571,63 @@ def run_game():
         apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw, ai_level_index)
         result_recorded = True
 
-    def start_loss_badge_animation(loser_side):
+    def load_slash_image():
+        nonlocal slash_image
+        if slash_image is not None:
+            return slash_image
+        path = os.path.join(ASSETS_DIR, "pieces", "movement", "slash.png")
+        if os.path.exists(path):
+            try:
+                img = pygame.image.load(path)
+                img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
+                max_w = int(CELL_SIZE * 1.4)
+                max_h = int(CELL_SIZE * 1.8)
+                iw, ih = img.get_size()
+                base_scale = min(1.0, max_w / max(1, iw), max_h / max(1, ih))
+                scale = base_scale * 1.2 
+                if scale < 1.0:
+                    new_size = (max(1, int(iw * scale)), max(1, int(ih * scale)))
+                    img = pygame.transform.smoothscale(img, new_size)
+                slash_image = img
+            except Exception:
+                slash_image = None
+        return slash_image
+
+    def start_slash_animation(loser_side, last_move=None):
+        nonlocal slash_anim_start, slash_anim_side, slash_anim_pos
+        if loser_side not in (Side.RED, Side.BLACK):
+            return
+        pos = board.find_general(loser_side)
+        if pos is None and last_move is not None:
+            captured = getattr(last_move, "captured", None)
+            if captured is not None and captured.ptype == PieceType.GENERAL and captured.side == loser_side:
+                pos = last_move.to_pos
+        if pos is None:
+            return
+        slash_anim_side = loser_side
+        slash_anim_start = pygame.time.get_ticks()
+        slash_anim_pos = pos
+
+    def slash_progress_for(loser_side):
+        if loser_side not in (Side.RED, Side.BLACK):
+            return 0.0
+        if slash_anim_start is None or slash_anim_side != loser_side:
+            return 0.0
+        elapsed = (pygame.time.get_ticks() - slash_anim_start) / 1000.0
+        duration = 0.45
+        if elapsed <= 0:
+            return 0.0
+        if elapsed >= duration:
+            return 1.0
+        return min(1.0, elapsed / duration)
+
+    def start_loss_badge_animation(loser_side, last_move=None):
         nonlocal loss_badge_anim_start, loss_badge_side
         if loser_side not in (Side.RED, Side.BLACK):
             return
         loss_badge_side = loser_side
         loss_badge_anim_start = pygame.time.get_ticks()
+        start_slash_animation(loser_side, last_move)
 
     def loss_badge_scale_for(loser_side):
         if loser_side not in (Side.RED, Side.BLACK):
@@ -625,7 +685,7 @@ def run_game():
                     game_over = True
                     winner_side = Side.RED if current_side == Side.BLACK else Side.BLACK
                     winner = winner_side
-                    start_loss_badge_animation(current_side)
+                    start_loss_badge_animation(current_side, last_move=move_history[-1] if move_history else None)
                     register_result_if_needed(winner_side, False)
                     replay_index = len(move_history)
             else:
@@ -670,7 +730,7 @@ def run_game():
         selected = None
         valid_moves = []
         hovered_move = None
-        start_loss_badge_animation(side)
+        start_loss_badge_animation(side, last_move=move_history[-1] if move_history else None)
         register_result_if_needed(winner_side, False)
         replay_index = len(move_history)
 
@@ -686,7 +746,7 @@ def run_game():
             if board.is_in_check(AI_SIDE):
                 game_over = True
                 winner = HUMAN_SIDE
-                start_loss_badge_animation(AI_SIDE)
+                start_loss_badge_animation(AI_SIDE, last_move=move_history[-1] if move_history else None)
                 register_result_if_needed(HUMAN_SIDE, False)
                 replay_index = len(move_history)
             else:
@@ -992,7 +1052,7 @@ def run_game():
                         ai_level_index = (ai_level_index + 1) % len(AI_LEVELS)
                         continue
                     # Takeback clicked
-                    if btn_takeback.is_clicked((mx, my)):
+                    if not game_over and btn_takeback.is_clicked((mx, my)):
                         if ai_input_locked:
                             continue
                         if move_history:
@@ -1017,7 +1077,7 @@ def run_game():
                             in_check_side = None
                             selected = None
                             valid_moves = []
-                            start_loss_badge_animation(current_side)
+                            start_loss_badge_animation(current_side, last_move=move_history[-1] if move_history else None)
                             register_result_if_needed(winner_side, False)
                             replay_index = len(move_history)
                         continue
@@ -1119,7 +1179,7 @@ def run_game():
                 if game_over and winner in (Side.RED, Side.BLACK):
                     loser_side = Side.BLACK if winner == Side.RED else Side.RED
                     if loss_badge_anim_start is None or loss_badge_side != loser_side:
-                        start_loss_badge_animation(loser_side)
+                        start_loss_badge_animation(loser_side, last_move=move_history[-1] if move_history else None)
                     badge_scale = loss_badge_scale_for(loser_side)
                 timer_rects_current = draw_side_avatars_on_board(
                     screen,
@@ -1186,6 +1246,18 @@ def run_game():
                         settings,
                         alpha=130,
                     )
+
+            # Animate sword slash overlay on the defeated General (reveals from top to bottom).
+            if game_over and slash_anim_pos is not None and slash_anim_side is not None:
+                img = load_slash_image()
+                progress = slash_progress_for(slash_anim_side)
+                if img is not None and progress > 0:
+                    full_w, full_h = img.get_size()
+                    draw_h = max(1, int(full_h * progress))
+                    src_rect = pygame.Rect(0, 0, full_w, draw_h)
+                    sx, sy = board_to_screen(*slash_anim_pos)
+                    dest_pos = (sx - full_w // 2, sy - full_h // 2)
+                    screen.blit(img, dest_pos, area=src_rect)
 
             mode_text = lang_text["mode_pvp"] if mode == "pvp" else lang_text["mode_ai"]
             mt_surf = font_text.render(mode_text, True, (0, 0, 0))
@@ -1579,7 +1651,7 @@ def run_game():
             btn_new_game.label = lang_text["btn_new_game"]
 
             btn_in_game_settings.draw(screen, font_button, enabled=True)
-            btn_takeback.draw(screen, font_button, enabled=bool(move_history))
+            btn_takeback.draw(screen, font_button, enabled=bool(move_history) and not game_over)
             btn_resign.draw(screen, font_button, enabled=not game_over)
             btn_new_game.draw(screen, font_button, enabled=True)
             btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
