@@ -7,7 +7,6 @@ BOARD_THEMES = [
         "river_color": (220, 210, 170),
         "border_image": "classic_border.png",
         "border_inner_size": (464, 522),
-        # không có image nghĩa là vẽ bằng line như cũ
     },
     {
         "key": "dark_wood",
@@ -28,11 +27,20 @@ BOARD_THEMES = [
         "border_inner_size": (464, 522),
     },
     {
-        "key": "classic_png",
-        "name": {"en": "Classic PNG", "vi": "Bàn PNG cổ điển"},
+        "key": "classic1_png",
+        "name": {"en": "Classic 1", "vi": "Classic 1"},
         "bg_color": (0, 0, 0),  
-        "image": "classic.png",  
-        "border_image": "classic_png_border.png",
+        "image": "classic1/board.png",  
+        "border_image": "classic1/border.png",
+        "border_inner_rect": (75, 70, 986.4, 1149.2),
+    },
+        {
+        "key": "classic2_png",
+        "name": {"en": "Classic 2", "vi": "Classic 2"},
+        "bg_color": (0, 0, 0),  
+        "image": "classic2/board.png",  
+        "border_image": "classic2/border.png",
+        "border_inner_rect": (28, 26, 411, 458),
     },
 ]
 

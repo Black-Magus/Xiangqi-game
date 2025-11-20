@@ -45,12 +45,44 @@ def draw_board(surface, settings: Settings):
 
     border_img = load_board_border_image(theme)
     img = load_board_image(theme)
+    if border_img is not None:
+        border_surface = border_img
+        src_w, src_h = border_img.get_size()
+
+        inner_rect = theme.get("border_inner_rect")
+        if inner_rect is not None:
+            ix, iy, inner_w, inner_h = inner_rect
+        else:
+            # fallback: dùng size của board image như cũ
+            inner_size = theme.get("border_inner_size")
+            if inner_size is None and img is not None:
+                inner_size = img.get_size()
+            inner_w, inner_h = inner_size if inner_size else (board_w, board_h)
+            ix = iy = 0
+
+        # scale border sao cho vùng inner vừa đúng với board_w, board_h
+        scale_x = board_w / float(inner_w)
+        scale_y = board_h / float(inner_h)
+        target_w = int(round(src_w * scale_x))
+        target_h = int(round(src_h * scale_y))
+
+        if (target_w, target_h) != (src_w, src_h):
+            border_surface = pygame.transform.smoothscale(border_img, (target_w, target_h))
+
+        # Căn border sao cho góc trái trên của inner rect trùng MARGIN_X, BOARD_TOP
+        border_x = int(round(MARGIN_X - ix * scale_x))
+        border_y = int(round(BOARD_TOP - iy * scale_y))
+
+        surface.blit(border_surface, (border_x, border_y))
+
+    # Draw the board after the border so the grid/artwork always sits on top of any opaque border center.
     if img is not None:
         scaled = pygame.transform.smoothscale(img, (board_w, board_h))
         surface.blit(scaled, (MARGIN_X, BOARD_TOP))
     else:
-        line_color = theme["line_color"]
-        river_color = theme["river_color"]
+        # Fall back to sensible defaults when theme colors are missing
+        line_color = theme.get("line_color", (40, 40, 40))
+        river_color = theme.get("river_color", (210, 220, 230))
 
         for c in range(BOARD_COLS):
             x = MARGIN_X + c * CELL_SIZE
@@ -72,25 +104,6 @@ def draw_board(surface, settings: Settings):
             CELL_SIZE,
         )
         pygame.draw.rect(surface, river_color, river_rect)
-
-    if border_img is not None:
-        inner_size = theme.get("border_inner_size")
-        if inner_size is None and img is not None:
-            inner_size = img.get_size()
-        inner_w, inner_h = inner_size if inner_size else (board_w, board_h)
-
-        border_surface = border_img
-        src_w, src_h = border_img.get_size()
-        scale_x = board_w / inner_w
-        scale_y = board_h / inner_h
-        target_w = max(1, int(round(src_w * scale_x)))
-        target_h = max(1, int(round(src_h * scale_y)))
-        if (target_w, target_h) != (src_w, src_h):
-            border_surface = pygame.transform.smoothscale(border_img, (target_w, target_h))
-
-        pad_x = max(0, (target_w - board_w) // 2)
-        pad_y = max(0, (target_h - board_h) // 2)
-        surface.blit(border_surface, (MARGIN_X - pad_x, BOARD_TOP - pad_y))
 
 
 def draw_piece(surface, piece, col, row, font, settings: Settings, highlight_color=None):
