@@ -15,6 +15,7 @@ BOARD_IMAGE_DIR = os.path.join(ASSETS_DIR, "boards")
 LOSS_BADGE_FILE = "loss_badge.png"
 
 _board_image_cache = {}
+_board_border_cache = {}
 
 
 BUILTIN_AVATARS = [
@@ -248,3 +249,19 @@ def load_board_image(theme):
     _board_image_cache[key] = img
     return img
 
+def load_board_border_image(theme):
+    path_rel = theme.get("border_image")
+    if not path_rel:
+        return None
+    key = path_rel
+    if key in _board_border_cache:
+        return _board_border_cache[key]
+    full_path = os.path.join(BOARD_IMAGE_DIR, path_rel)
+    if not os.path.exists(full_path):
+        return None
+    try:
+        img = pygame.image.load(full_path).convert_alpha()
+    except Exception:
+        return None
+    _board_border_cache[key] = img
+    return img

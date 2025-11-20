@@ -4,7 +4,14 @@ from config import BOARD_COLS, BOARD_ROWS, CELL_SIZE, MARGIN_X, MARGIN_Y, BOARD_
 from core.engine.types import Side, PieceType
 
 from data.themes import BOARD_THEMES, PIECE_THEMES
-from data.avatar_assets import AVATAR_BOARD_SIZE, get_piece_sprite, load_avatar_image, load_board_image, load_loss_badge
+from data.avatar_assets import (
+    AVATAR_BOARD_SIZE,
+    get_piece_sprite,
+    load_avatar_image,
+    load_board_image,
+    load_board_border_image,
+    load_loss_badge,
+)
 from core.profiles_manager import DEFAULT_ELO, find_player
 from core.engine.ai_engine import AI_LEVELS
 from core.settings_manager import Settings
@@ -33,37 +40,57 @@ def draw_board(surface, settings: Settings):
     bg_color = theme.get("bg_color", (30, 30, 30))
     surface.fill(bg_color)
 
+    board_w = (BOARD_COLS - 1) * CELL_SIZE
+    board_h = (BOARD_ROWS - 1) * CELL_SIZE
+
+    border_img = load_board_border_image(theme)
     img = load_board_image(theme)
     if img is not None:
-        board_w = (BOARD_COLS - 1) * CELL_SIZE
-        board_h = (BOARD_ROWS - 1) * CELL_SIZE
         scaled = pygame.transform.smoothscale(img, (board_w, board_h))
         surface.blit(scaled, (MARGIN_X, BOARD_TOP))
-        return
+    else:
+        line_color = theme["line_color"]
+        river_color = theme["river_color"]
 
-    line_color = theme["line_color"]
-    river_color = theme["river_color"]
+        for c in range(BOARD_COLS):
+            x = MARGIN_X + c * CELL_SIZE
+            y1 = BOARD_TOP
+            y2 = BOARD_TOP + (BOARD_ROWS - 1) * CELL_SIZE
+            pygame.draw.line(surface, line_color, (x, y1), (x, y2), 2)
 
-    for c in range(BOARD_COLS):
-        x = MARGIN_X + c * CELL_SIZE
-        y1 = BOARD_TOP
-        y2 = BOARD_TOP + (BOARD_ROWS - 1) * CELL_SIZE
-        pygame.draw.line(surface, line_color, (x, y1), (x, y2), 2)
+        for r in range(BOARD_ROWS):
+            y = BOARD_TOP + r * CELL_SIZE
+            x1 = MARGIN_X
+            x2 = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
+            pygame.draw.line(surface, line_color, (x1, y), (x2, y), 2)
 
-    for r in range(BOARD_ROWS):
-        y = BOARD_TOP + r * CELL_SIZE
-        x1 = MARGIN_X
-        x2 = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
-        pygame.draw.line(surface, line_color, (x1, y), (x2, y), 2)
+        river_y_top = BOARD_TOP + 4 * CELL_SIZE
+        river_rect = pygame.Rect(
+            MARGIN_X,
+            river_y_top,
+            (BOARD_COLS - 1) * CELL_SIZE,
+            CELL_SIZE,
+        )
+        pygame.draw.rect(surface, river_color, river_rect)
 
-    river_y_top = BOARD_TOP + 4 * CELL_SIZE
-    river_rect = pygame.Rect(
-        MARGIN_X,
-        river_y_top,
-        (BOARD_COLS - 1) * CELL_SIZE,
-        CELL_SIZE,
-    )
-    pygame.draw.rect(surface, river_color, river_rect)
+    if border_img is not None:
+        inner_size = theme.get("border_inner_size")
+        if inner_size is None and img is not None:
+            inner_size = img.get_size()
+        inner_w, inner_h = inner_size if inner_size else (board_w, board_h)
+
+        border_surface = border_img
+        src_w, src_h = border_img.get_size()
+        scale_x = board_w / inner_w
+        scale_y = board_h / inner_h
+        target_w = max(1, int(round(src_w * scale_x)))
+        target_h = max(1, int(round(src_h * scale_y)))
+        if (target_w, target_h) != (src_w, src_h):
+            border_surface = pygame.transform.smoothscale(border_img, (target_w, target_h))
+
+        pad_x = max(0, (target_w - board_w) // 2)
+        pad_y = max(0, (target_h - board_h) // 2)
+        surface.blit(border_surface, (MARGIN_X - pad_x, BOARD_TOP - pad_y))
 
 
 def draw_piece(surface, piece, col, row, font, settings: Settings, highlight_color=None):
@@ -227,12 +254,14 @@ def _draw_text_with_shadow(surface, font, text, color, pos):
 
 
 def _compute_caption_layout(rect, font_avatar, name_text, elo_text, align_left):
-    max_width = max(font_avatar.size(name_text)[0], font_avatar.size(elo_text)[0])
+    name_w, name_h = font_avatar.size(name_text)
+    elo_w, elo_h = font_avatar.size(elo_text)
     pad = 10
-    base_x = rect.left - max_width - pad if align_left else rect.right + pad
-    name_y = rect.centery - font_avatar.get_height() + 4
-    elo_y = rect.centery + 4
-    return base_x, name_y, elo_y
+    gap = 12
+    total_w = name_w + gap + elo_w
+    base_x = rect.left - total_w - pad if align_left else rect.right + pad
+    base_y = rect.centery - max(name_h, elo_h) // 2
+    return base_x, base_y, gap
 
 
 def _draw_avatar_caption(surface, rect, name, elo_value, name_color, font_avatar, align_left=False):
@@ -241,10 +270,11 @@ def _draw_avatar_caption(surface, rect, name, elo_value, name_color, font_avatar
     name_text = str(name)
     elo_text = f"ELO: {int(round(elo_value))}"
 
-    base_x, name_y, elo_y = _compute_caption_layout(rect, font_avatar, name_text, elo_text, align_left)
+    base_x, base_y, gap = _compute_caption_layout(rect, font_avatar, name_text, elo_text, align_left)
 
-    name_rect = _draw_text_with_shadow(surface, font_avatar, name_text, name_color, (base_x, name_y))
-    elo_rect = _draw_text_with_shadow(surface, font_avatar, elo_text, (50, 50, 50), (base_x, elo_y))
+    name_rect = _draw_text_with_shadow(surface, font_avatar, name_text, name_color, (base_x, base_y))
+    elo_pos = (name_rect.right + gap, base_y)
+    elo_rect = _draw_text_with_shadow(surface, font_avatar, elo_text, (50, 50, 50), elo_pos)
     return {"name_rect": name_rect, "elo_rect": elo_rect, "align_left": align_left}
 
 

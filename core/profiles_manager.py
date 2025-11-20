@@ -201,7 +201,8 @@ def apply_game_result_to_profiles(profiles_data: Dict[str, Any],
                                   mode: str,
                                   winner_side: Optional[Side],
                                   is_draw: bool,
-                                  ai_level_index: Optional[int] = None) -> None:
+                                  ai_level_index: Optional[int] = None,
+                                  human_side: Side = HUMAN_SIDE) -> None:
     if mode not in ("pvp", "ai"):
         return
 
@@ -266,7 +267,7 @@ def apply_game_result_to_profiles(profiles_data: Dict[str, Any],
             update_stats_for_player(human_player, "draw", is_vs_ai=True)
             update_player_elo(human_player, ai_rating, "draw")
         else:
-            if winner_side == HUMAN_SIDE:
+            if winner_side == human_side:
                 update_stats_for_player(human_player, "win", is_vs_ai=True)
                 update_player_elo(human_player, ai_rating, "win")
             else:

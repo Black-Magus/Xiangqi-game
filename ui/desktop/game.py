@@ -7,6 +7,7 @@ from config import (
     CELL_SIZE,
     MARGIN_X,
     MARGIN_Y,
+    BOARD_OFFSET_Y,
     WINDOW_WIDTH,
     WINDOW_HEIGHT,
 )
@@ -144,6 +145,8 @@ def run_game():
     ]
 
     board = Board()
+    human_side = HUMAN_SIDE
+    ai_side = AI_SIDE
     current_side = Side.RED
     selected = None
     valid_moves = []
@@ -186,6 +189,8 @@ def run_game():
     timer_thumbnail_cache = {}
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
+    board_right = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
+    board_top = MARGIN_Y + BOARD_OFFSET_Y
 
     btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 153, 190, 30))
     btn_takeback = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 190, 30))
@@ -195,6 +200,7 @@ def run_game():
     btn_start_match = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 130, 160, 28))
     btn_replay_prev = Button(pygame.Rect(panel_x, MARGIN_Y + 140, 40, 28))       # "<"
     btn_replay_next = Button(pygame.Rect(panel_x + 50, MARGIN_Y + 140, 40, 28))  # ">"
+    btn_change_side = Button(pygame.Rect(board_right + 12, board_top + 6, 120, 26))
 
     center_x = WINDOW_WIDTH // 2
     start_y = WINDOW_HEIGHT // 2 - 80
@@ -423,6 +429,19 @@ def run_game():
         sec = timer_seconds_for_index(timer_option_index)
         time_remaining = {Side.RED: sec, Side.BLACK: sec}
 
+    def can_change_side_now():
+        if state not in ("pvp", "ai"):
+            return False
+        if game_over:
+            return False
+        if replay_index is not None:
+            return False
+        if move_history:
+            return False
+        if state == "ai" and ai_match_started:
+            return False
+        return True
+
     def format_time_value(seconds):
         if seconds is None:
             return "∞"
@@ -519,11 +538,15 @@ def run_game():
         inside = 0 <= gx <= base_width and 0 <= ly <= base_height
         return int(gx), int(ly), inside
 
-    def reset_game():
+    def reset_game(red_on_bottom=None):
         nonlocal current_side, selected, valid_moves, move_history, redo_stack, hovered_move
         nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, timer_modal_open
-        nonlocal slash_anim_start, slash_anim_side, slash_anim_pos
-        board.reset()
+        nonlocal slash_anim_start, slash_anim_side, slash_anim_pos, human_side, ai_side, log_follow_latest, loss_badge_anim_start, loss_badge_side
+        if red_on_bottom is None:
+            red_on_bottom = board.red_on_bottom
+        board.reset(red_on_bottom=red_on_bottom)
+        human_side = Side.RED if board.red_on_bottom else Side.BLACK
+        ai_side = Side.BLACK if board.red_on_bottom else Side.RED
         current_side = Side.RED
         selected = None
         valid_moves = []
@@ -543,7 +566,15 @@ def run_game():
         slash_anim_start = None
         slash_anim_side = None
         slash_anim_pos = None
+        log_follow_latest = True
         reset_timers_to_full()
+
+    def change_side_by_swapping_pieces():
+        nonlocal move_log_offset
+        if state not in ("pvp", "ai"):
+            return
+        move_log_offset = 0
+        reset_game(red_on_bottom=not board.red_on_bottom)
 
     def update_hover_preview(mx, my, inside):
         nonlocal hovered_move
@@ -563,12 +594,12 @@ def run_game():
         hovered_move = (col, row) if (col, row) in valid_moves else None
 
     def register_result_if_needed(winner_side, is_draw=False):
-        nonlocal result_recorded
+        nonlocal result_recorded, human_side
         if result_recorded:
             return
         if mode not in ("pvp", "ai"):
             return
-        apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw, ai_level_index)
+        apply_game_result_to_profiles(profiles_data, mode, winner_side, is_draw, ai_level_index, human_side)
         result_recorded = True
 
     def load_slash_image():
@@ -661,7 +692,7 @@ def run_game():
 
         clamp_replay_index()
 
-        board.reset()
+        board.reset(red_on_bottom=board.red_on_bottom)
         current_side = Side.RED
         in_check_side = None
 
@@ -737,17 +768,17 @@ def run_game():
     def ai_make_move():
         nonlocal current_side, move_history, redo_stack, game_over, winner
         nonlocal in_check_side, selected, valid_moves, hovered_move
-        nonlocal log_follow_latest
-        if game_over or current_side != AI_SIDE or not ai_match_started:
+        nonlocal log_follow_latest, human_side, ai_side
+        if game_over or current_side != ai_side or not ai_match_started:
             return
         level_cfg = AI_LEVELS[ai_level_index]
-        mv = choose_ai_move(board, level_cfg, AI_SIDE)
+        mv = choose_ai_move(board, level_cfg, ai_side)
         if mv is None:
-            if board.is_in_check(AI_SIDE):
+            if board.is_in_check(ai_side):
                 game_over = True
-                winner = HUMAN_SIDE
-                start_loss_badge_animation(AI_SIDE, last_move=move_history[-1] if move_history else None)
-                register_result_if_needed(HUMAN_SIDE, False)
+                winner = human_side
+                start_loss_badge_animation(ai_side, last_move=move_history[-1] if move_history else None)
+                register_result_if_needed(human_side, False)
                 replay_index = len(move_history)
             else:
                 game_over = True
@@ -765,7 +796,7 @@ def run_game():
         valid_moves = []
         hovered_move = None
 
-        current_side = HUMAN_SIDE
+        current_side = human_side
         update_game_state_after_side_change()
 
     running = True
@@ -1018,6 +1049,9 @@ def run_game():
                     if btn_log_tab_captured.is_clicked((mx, my)):
                         log_active_tab = "captured"
                         continue
+                    if btn_change_side.is_clicked((mx, my)) and can_change_side_now():
+                        change_side_by_swapping_pieces()
+                        continue
 
                     # Setting button clicked
                     if btn_in_game_settings.is_clicked((mx, my)):
@@ -1093,7 +1127,7 @@ def run_game():
                         continue
                     
                     # AI move turn
-                    if state == "ai" and current_side == AI_SIDE:
+                    if state == "ai" and current_side == ai_side:
                         continue
 
                     col, row = screen_to_board(mx, my)
@@ -1134,7 +1168,7 @@ def run_game():
                                     valid_moves = []
                                     hovered_move = None
 
-        if state == "ai" and ai_match_started and not game_over and not paused and current_side == AI_SIDE:
+        if state == "ai" and ai_match_started and not game_over and not paused and current_side == ai_side:
             ai_make_move()
 
         if timers_are_running():
@@ -1192,6 +1226,10 @@ def run_game():
                     loser_side=loser_side,
                     loss_badge_scale=badge_scale,
                 )
+
+            if can_change_side_now():
+                btn_change_side.label = t(settings, "btn_change_side")
+                btn_change_side.draw(screen, font_button, enabled=True)
 
             if selected is not None:
                 draw_selection(screen, *selected)

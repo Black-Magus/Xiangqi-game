@@ -2,47 +2,66 @@ from config import BOARD_COLS, BOARD_ROWS
 from .types import Side, PieceType, Piece
 
 class Board:
-    def __init__(self):
-        self.grid = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+    def __init__(self, red_on_bottom: bool = True):
+        self.red_on_bottom = red_on_bottom
+        self.grid = []
         self.setup_initial()
 
+    def _is_bottom_side(self, side: Side) -> bool:
+        return (side == Side.RED and self.red_on_bottom) or (side == Side.BLACK and not self.red_on_bottom)
+
+    def _palace_rows(self, side: Side):
+        # Bottom palace rows are 7-9, top are 0-2.
+        return (7, 9) if self._is_bottom_side(side) else (0, 2)
+
+    def _soldier_forward(self, side: Side) -> int:
+        # Bottom side moves up (negative row), top side moves down (positive row).
+        return -1 if self._is_bottom_side(side) else 1
+
+    def _soldier_crossed_river(self, side: Side, row: int) -> bool:
+        # River is between rows 4 and 5.
+        if self._is_bottom_side(side):
+            return row <= 4
+        return row >= 5
+
+    def _elephant_stays_home(self, side: Side, row: int) -> bool:
+        # Elephants cannot cross the river.
+        if self._is_bottom_side(side):
+            return row >= 5
+        return row <= 4
+
     def setup_initial(self):
+        self.grid = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+
         def set_piece(row, col, side, ptype):
             self.grid[row][col] = Piece(side, ptype)
 
-        # Black
-        set_piece(0, 0, Side.BLACK, PieceType.ROOK)
-        set_piece(0, 1, Side.BLACK, PieceType.HORSE)
-        set_piece(0, 2, Side.BLACK, PieceType.ELEPHANT)
-        set_piece(0, 3, Side.BLACK, PieceType.ADVISOR)
-        set_piece(0, 4, Side.BLACK, PieceType.GENERAL)
-        set_piece(0, 5, Side.BLACK, PieceType.ADVISOR)
-        set_piece(0, 6, Side.BLACK, PieceType.ELEPHANT)
-        set_piece(0, 7, Side.BLACK, PieceType.HORSE)
-        set_piece(0, 8, Side.BLACK, PieceType.ROOK)
+        def place_army(side: Side, is_bottom: bool):
+            back_row = BOARD_ROWS - 1 if is_bottom else 0
+            cannon_row = BOARD_ROWS - 3 if is_bottom else 2
+            soldier_row = BOARD_ROWS - 4 if is_bottom else 3
 
-        set_piece(2, 1, Side.BLACK, PieceType.CANNON)
-        set_piece(2, 7, Side.BLACK, PieceType.CANNON)
+            set_piece(back_row, 0, side, PieceType.ROOK)
+            set_piece(back_row, 1, side, PieceType.HORSE)
+            set_piece(back_row, 2, side, PieceType.ELEPHANT)
+            set_piece(back_row, 3, side, PieceType.ADVISOR)
+            set_piece(back_row, 4, side, PieceType.GENERAL)
+            set_piece(back_row, 5, side, PieceType.ADVISOR)
+            set_piece(back_row, 6, side, PieceType.ELEPHANT)
+            set_piece(back_row, 7, side, PieceType.HORSE)
+            set_piece(back_row, 8, side, PieceType.ROOK)
 
-        for c in [0, 2, 4, 6, 8]:
-            set_piece(3, c, Side.BLACK, PieceType.SOLDIER)
+            set_piece(cannon_row, 1, side, PieceType.CANNON)
+            set_piece(cannon_row, 7, side, PieceType.CANNON)
 
-        # Red
-        set_piece(9, 0, Side.RED, PieceType.ROOK)
-        set_piece(9, 1, Side.RED, PieceType.HORSE)
-        set_piece(9, 2, Side.RED, PieceType.ELEPHANT)
-        set_piece(9, 3, Side.RED, PieceType.ADVISOR)
-        set_piece(9, 4, Side.RED, PieceType.GENERAL)
-        set_piece(9, 5, Side.RED, PieceType.ADVISOR)
-        set_piece(9, 6, Side.RED, PieceType.ELEPHANT)
-        set_piece(9, 7, Side.RED, PieceType.HORSE)
-        set_piece(9, 8, Side.RED, PieceType.ROOK)
+            for c in [0, 2, 4, 6, 8]:
+                set_piece(soldier_row, c, side, PieceType.SOLDIER)
 
-        set_piece(7, 1, Side.RED, PieceType.CANNON)
-        set_piece(7, 7, Side.RED, PieceType.CANNON)
+        bottom_side = Side.RED if self.red_on_bottom else Side.BLACK
+        top_side = Side.BLACK if self.red_on_bottom else Side.RED
 
-        for c in [0, 2, 4, 6, 8]:
-            set_piece(6, c, Side.RED, PieceType.SOLDIER)
+        place_army(top_side, is_bottom=False)
+        place_army(bottom_side, is_bottom=True)
 
     def inside_board(self, col, row):
         return 0 <= col < BOARD_COLS and 0 <= row < BOARD_ROWS
@@ -165,10 +184,7 @@ class Board:
 
     def _gen_general_moves(self, col, row, piece):
         moves = []
-        if piece.side == Side.RED:
-            min_row, max_row = 7, 9
-        else:
-            min_row, max_row = 0, 2
+        min_row, max_row = self._palace_rows(piece.side)
         min_col, max_col = 3, 5
 
         directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
@@ -185,10 +201,7 @@ class Board:
 
     def _gen_advisor_moves(self, col, row, piece):
         moves = []
-        if piece.side == Side.RED:
-            min_row, max_row = 7, 9
-        else:
-            min_row, max_row = 0, 2
+        min_row, max_row = self._palace_rows(piece.side)
         min_col, max_col = 3, 5
 
         directions = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
@@ -211,9 +224,7 @@ class Board:
             mc, mr = col + dc // 2, row + dr // 2
             if not self.inside_board(nc, nr):
                 continue
-            if piece.side == Side.RED and nr < 5:
-                continue
-            if piece.side == Side.BLACK and nr > 4:
+            if not self._elephant_stays_home(piece.side, nr):
                 continue
             if self.get_piece(mc, mr) is not None:
                 continue
@@ -285,12 +296,7 @@ class Board:
 
     def _gen_soldier_moves(self, col, row, piece):
         moves = []
-        if piece.side == Side.RED:
-            forward = -1
-            river_row = 4
-        else:
-            forward = 1
-            river_row = 5
+        forward = self._soldier_forward(piece.side)
 
         nc, nr = col, row + forward
         if self.inside_board(nc, nr):
@@ -298,8 +304,7 @@ class Board:
             if target is None or target.side != piece.side:
                 moves.append((nc, nr))
 
-        crossed_river = (row <= river_row) if piece.side == Side.RED else (row >= river_row)
-        if crossed_river:
+        if self._soldier_crossed_river(piece.side, row):
             for dc in [-1, 1]:
                 nc, nr = col + dc, row
                 if self.inside_board(nc, nr):
@@ -307,6 +312,6 @@ class Board:
                     if target is None or target.side != piece.side:
                         moves.append((nc, nr))
         return moves
-    def reset(self):
-        self.grid = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+    def reset(self, red_on_bottom: bool = True):
+        self.red_on_bottom = red_on_bottom
         self.setup_initial()

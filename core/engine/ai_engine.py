@@ -30,7 +30,7 @@ AI_LEVELS = [
         "elo": 900,
     },
     {
-        "name": "Pro Bot",
+        "name": "Pro Bot dasdsadsaddsagdsfsddfsdf",
         "avatar_char": "P",
         "color": (120, 220, 120),
         "depth": 1,

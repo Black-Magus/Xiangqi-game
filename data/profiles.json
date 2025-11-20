@@ -12,29 +12,29 @@
           50
         ],
         "symbol": "C",
-        "path": "player2.png"
+        "path": "player3.png"
       },
       "stats": {
         "overall": {
-          "games": 80,
-          "wins": 38,
-          "losses": 41,
+          "games": 93,
+          "wins": 43,
+          "losses": 49,
           "draws": 1
         },
         "vs_ai": {
-          "games": 51,
+          "games": 53,
           "wins": 17,
-          "losses": 34,
+          "losses": 36,
           "draws": 0
         },
         "vs_human": {
-          "games": 29,
-          "wins": 21,
-          "losses": 7,
+          "games": 40,
+          "wins": 26,
+          "losses": 13,
           "draws": 1
         }
       },
-      "elo": 1231
+      "elo": 1165
     },
     {
       "id": "p2",
@@ -47,13 +47,13 @@
           220
         ],
         "symbol": "G",
-        "path": "player1.png"
+        "path": "player2.png"
       },
       "stats": {
         "overall": {
-          "games": 30,
-          "wins": 7,
-          "losses": 23,
+          "games": 41,
+          "wins": 13,
+          "losses": 28,
           "draws": 0
         },
         "vs_ai": {
@@ -63,13 +63,13 @@
           "draws": 0
         },
         "vs_human": {
-          "games": 30,
-          "wins": 7,
-          "losses": 23,
+          "games": 41,
+          "wins": 13,
+          "losses": 28,
           "draws": 0
         }
       },
-      "elo": 1086
+      "elo": 1124
     }
   ],
   "last_selected": {
