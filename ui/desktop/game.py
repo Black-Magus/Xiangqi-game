@@ -177,6 +177,7 @@ def run_game():
     mode = None
     ai_level_index = 1
     ai_match_started = False
+    pvp_match_started = False
     settings_return_state = "menu"
     settings_page = "main"
     settings_category = "general"
@@ -194,32 +195,104 @@ def run_game():
     background_image_cache = {}
     background_scaled_cache = {}
     background_thumb_cache = {}
+    MENU_BACKGROUND_PATH = os.path.join(ASSETS_DIR, "menu", "main_menu.jpg")
+    menu_background_image_cache = {}
+    menu_background_scaled_cache = {}
+    MENU_CORNER_RADIUS = 18
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
     board_right = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
     board_top = MARGIN_Y + BOARD_OFFSET_Y
 
-    btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 153, 190, 30))
-    btn_takeback = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 190, 30))
-    btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 90, 30))
-    btn_new_game = Button(pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 80, 90, 30))
-    btn_ai_level = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 95, 160, 28))
-    btn_start_match = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 130, 160, 28))
-    btn_replay_prev = Button(pygame.Rect(panel_x, MARGIN_Y + 140, 40, 28))       # "<"
-    btn_replay_next = Button(pygame.Rect(panel_x + 50, MARGIN_Y + 140, 40, 28))  # ">"
-    btn_change_side = Button(pygame.Rect(board_right + 12, board_top + 6, 120, 26))
-
-    center_x = WINDOW_WIDTH // 2
-    start_y = WINDOW_HEIGHT // 2 - 80
-    btn_menu_pvp = Button(pygame.Rect(center_x - 100, start_y, 200, 40))
-    btn_menu_ai = Button(pygame.Rect(center_x - 100, start_y + 50, 200, 40))
-    btn_menu_settings = Button(pygame.Rect(center_x - 100, start_y + 100, 200, 40))
-    btn_menu_exit = Button(pygame.Rect(center_x - 100, start_y + 150, 200, 40))
-
-    # log / captured box
     PANEL_MIN_LOG_TOP = MARGIN_Y + 160
     LOG_BOX_WIDTH = 220
     LOG_BOX_HEIGHT = 260
+    START_BUTTON_HEIGHT = 48
+    START_BUTTON_WIDTH = LOG_BOX_WIDTH
+    START_BUTTON_OFFSET_X = 30  # nudge to the right of center
+    SWITCH_BUTTON_SIZE = 44
+    SWITCH_BUTTON_SPACING = 12
+
+    switch_image_path = os.path.join(ASSETS_DIR, "components", "switch.jpg")
+    switch_image = None
+    try:
+        switch_image = pygame.image.load(switch_image_path).convert_alpha()
+    except Exception:
+        switch_image = None
+
+    start_button_style = {
+        "variant": "gradient",
+        "colors_enabled": ((150, 255, 150), (0, 190, 0)),
+        "colors_disabled": ((180, 180, 180), (130, 130, 130)),
+        "border_radius": 14,
+        "border_color": (0, 110, 0),
+        "text_color_enabled": (255, 255, 255),
+        "text_color_disabled": (235, 235, 235),
+        "gloss": True,
+        "gloss_color": (255, 255, 255, 70),
+        "shadow": True,
+        "shadow_color": (0, 0, 0, 90),
+        "shadow_offset": (0, 4),
+    }
+    resign_button_style = {
+        "variant": "gradient",
+        "colors_enabled": ((255, 150, 150), (200, 0, 0)),
+        "colors_disabled": ((200, 170, 170), (150, 80, 80)),
+        "border_radius": 10,
+        "border_color": (140, 0, 0),
+        "text_color_enabled": (255, 255, 255),
+        "text_color_disabled": (235, 235, 235),
+        "gloss": True,
+        "gloss_color": (255, 255, 255, 70),
+    }
+    new_game_button_style = {
+        "variant": "gradient",
+        "colors_enabled": ((160, 210, 255), (0, 90, 200)),
+        "colors_disabled": ((180, 190, 210), (80, 110, 150)),
+        "border_radius": 10,
+        "border_color": (0, 70, 140),
+        "text_color_enabled": (255, 255, 255),
+        "text_color_disabled": (235, 235, 235),
+        "gloss": True,
+        "gloss_color": (255, 255, 255, 70),
+    }
+    switch_button_style = {
+        "variant": "image_circle",
+        "image_surface": switch_image,
+        "bg_enabled": (245, 245, 245),
+        "bg_disabled": (190, 190, 190),
+        "border_color": (40, 40, 40),
+        "image_inset": 6,
+        "disabled_alpha": 150,
+    }
+
+    btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 153, 190, 30))
+    btn_takeback = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 190, 30))
+    btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 90, 30), style=resign_button_style)
+    btn_new_game = Button(pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 80, 90, 30), style=new_game_button_style)
+    btn_ai_level = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 95, 160, 28))
+    btn_start_match = Button(
+        pygame.Rect(panel_x, MARGIN_Y - START_BUTTON_HEIGHT - 20, START_BUTTON_WIDTH, START_BUTTON_HEIGHT),
+        style=start_button_style,
+    )
+    btn_replay_prev = Button(pygame.Rect(panel_x, MARGIN_Y + 140, 40, 28))       # "<"
+    btn_replay_next = Button(pygame.Rect(panel_x + 50, MARGIN_Y + 140, 40, 28))  # ">"
+    btn_change_side = Button(
+        pygame.Rect(panel_x - SWITCH_BUTTON_SIZE - SWITCH_BUTTON_SPACING, MARGIN_Y - SWITCH_BUTTON_SIZE - 12, SWITCH_BUTTON_SIZE, SWITCH_BUTTON_SIZE),
+        label="",
+        style=switch_button_style,
+    )
+
+    center_x = WINDOW_WIDTH // 2
+    start_y = WINDOW_HEIGHT // 2 - 140
+    menu_gap = 52
+    btn_menu_pvp = Button(pygame.Rect(center_x - 110, start_y, 220, 42))
+    btn_menu_ai = Button(pygame.Rect(center_x - 110, start_y + menu_gap, 220, 42))
+    btn_menu_stats = Button(pygame.Rect(center_x - 110, start_y + menu_gap * 2, 220, 42))
+    btn_menu_settings = Button(pygame.Rect(center_x - 110, start_y + menu_gap * 3, 220, 42))
+    btn_menu_credits = Button(pygame.Rect(center_x - 110, start_y + menu_gap * 4, 220, 42))
+    btn_menu_exit = Button(pygame.Rect(center_x - 110, start_y + menu_gap * 5, 220, 42))
+    btn_credits_back = Button(pygame.Rect(center_x - 100, WINDOW_HEIGHT - 110, 200, 40))
 
     btn_log_tab_moves = Button(pygame.Rect(panel_x, PANEL_MIN_LOG_TOP, 100, 24))
     btn_log_tab_captured = Button(pygame.Rect(panel_x + 110, PANEL_MIN_LOG_TOP, 100, 24))
@@ -234,7 +307,6 @@ def run_game():
 
     settings_center_x = WINDOW_WIDTH // 2
     settings_open_dropdown = None
-    btn_settings_player_stats = Button(pygame.Rect(settings_center_x - 110, WINDOW_HEIGHT - 110, 220, 36))
     btn_settings_back = Button(pygame.Rect(settings_center_x - 110, WINDOW_HEIGHT - 65, 220, 36))
 
     def apply_display_mode():
@@ -482,6 +554,24 @@ def run_game():
         sec = timer_seconds_for_index(timer_option_index)
         time_remaining = {Side.RED: sec, Side.BLACK: sec}
 
+    def current_match_started():
+        if state == "ai":
+            return ai_match_started
+        if state == "pvp":
+            return pvp_match_started
+        if mode == "ai":
+            return ai_match_started
+        if mode == "pvp":
+            return pvp_match_started
+        return False
+
+    def start_current_match():
+        nonlocal ai_match_started, pvp_match_started
+        if state == "ai":
+            ai_match_started = True
+        elif state == "pvp":
+            pvp_match_started = True
+
     def can_change_side_now():
         if state not in ("pvp", "ai"):
             return False
@@ -491,7 +581,7 @@ def run_game():
             return False
         if move_history:
             return False
-        if state == "ai" and ai_match_started:
+        if current_match_started():
             return False
         return True
 
@@ -515,8 +605,10 @@ def run_game():
             return False
         if game_over:
             return False
+        if current_match_started():
+            return False
         if state == "ai":
-            return not ai_match_started
+            return True
         return len(move_history) == 0
 
     def set_timer_option(idx: int):
@@ -604,6 +696,18 @@ def run_game():
         rect = pygame.Rect(offset_x, offset_y, tw, th)
         return scaled.subsurface(rect).copy()
 
+    def _apply_round_corners(surf, radius):
+        if surf is None:
+            return None
+        w, h = surf.get_size()
+        if w <= 0 or h <= 0:
+            return surf
+        rounded = surf.convert_alpha()
+        mask = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=radius)
+        rounded.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        return rounded
+
     def load_background_image(file_name):
         if not file_name:
             return None
@@ -654,6 +758,42 @@ def run_game():
             pygame.draw.rect(thumb, (20, 20, 20), thumb.get_rect(), 2)
         background_thumb_cache[key] = thumb
         return thumb
+
+    def load_menu_background_image():
+        key = MENU_BACKGROUND_PATH
+        if key in menu_background_image_cache:
+            return menu_background_image_cache[key]
+        img = None
+        if os.path.exists(key):
+            try:
+                img = pygame.image.load(key)
+                img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
+            except Exception:
+                img = None
+        menu_background_image_cache[key] = img
+        return img
+
+    def load_menu_background_surface(size):
+        if size in menu_background_scaled_cache:
+            return menu_background_scaled_cache[size]
+        img = load_menu_background_image()
+        surf = _cover_scale_image(img, size) if img is not None else None
+        if surf is not None:
+            surf = _apply_round_corners(surf, MENU_CORNER_RADIUS)
+        menu_background_scaled_cache[size] = surf
+        return surf
+
+    def draw_menu_background(surface, dim_alpha=0):
+        size = surface.get_size()
+        bg = load_menu_background_surface(size)
+        if bg is None:
+            surface.fill((40, 40, 60))
+        else:
+            surface.blit(bg, (0, 0))
+            if dim_alpha > 0:
+                overlay = pygame.Surface(size, pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, dim_alpha))
+                surface.blit(overlay, (0, 0))
 
     def background_label(idx=None):
         entry = get_background_entry(idx)
@@ -735,7 +875,7 @@ def run_game():
 
     def reset_game(red_on_bottom=None):
         nonlocal current_side, selected, valid_moves, move_history, redo_stack, hovered_move
-        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, timer_modal_open, background_modal_open
+        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, pvp_match_started, timer_modal_open, background_modal_open
         nonlocal slash_anim_start, slash_anim_side, slash_anim_pos, human_side, ai_side, log_follow_latest, loss_badge_anim_start, loss_badge_side
         if red_on_bottom is None:
             red_on_bottom = board.red_on_bottom
@@ -755,6 +895,7 @@ def run_game():
         replay_index = None
         paused = False
         ai_match_started = False
+        pvp_match_started = False
         timer_modal_open = False
         background_modal_open = False
         loss_badge_anim_start = None
@@ -770,6 +911,12 @@ def run_game():
         if state not in ("pvp", "ai"):
             return
         move_log_offset = 0
+        if state == "pvp":
+            last_sel = profiles_data.setdefault("last_selected", {}).setdefault("pvp", {})
+            red_id = last_sel.get("red_player_id", "p1")
+            black_id = last_sel.get("black_player_id", "p2")
+            last_sel["red_player_id"], last_sel["black_player_id"] = black_id, red_id
+            save_profiles(profiles_data)
         reset_game(red_on_bottom=not board.red_on_bottom)
 
     def update_hover_preview(mx, my, inside):
@@ -922,7 +1069,7 @@ def run_game():
                     winner = None
 
     def switch_to_menu():
-        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded, ai_match_started, hovered_move, background_modal_open
+        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded, ai_match_started, pvp_match_started, hovered_move, background_modal_open
         state = "menu"
         selected = None
         valid_moves = []
@@ -932,6 +1079,7 @@ def run_game():
         winner = None
         result_recorded = False
         ai_match_started = False
+        pvp_match_started = False
         background_modal_open = False
 
     def timers_are_running():
@@ -945,7 +1093,9 @@ def run_game():
             return False
         if state == "ai":
             return ai_match_started
-        return len(move_history) > 0
+        if state == "pvp":
+            return pvp_match_started and len(move_history) > 0
+        return False
 
     def handle_timeout(side: Side):
         nonlocal game_over, winner, selected, valid_moves, in_check_side, replay_index, hovered_move
@@ -1011,9 +1161,13 @@ def run_game():
                         timer_modal_open = False
                     elif background_modal_open:
                         background_modal_open = False
+                    elif state == "credits":
+                        state = "menu"
                     elif state == "settings":
                         settings_open_dropdown = None
                         if settings_page == "stats":
+                            if settings_return_state:
+                                state = settings_return_state
                             settings_page = "main"
                         else:
                             state = settings_return_state
@@ -1186,13 +1340,28 @@ def run_game():
                         continue
                     if btn_menu_settings.is_clicked((mx, my)):
                         settings_return_state = "menu"
+                        settings_page = "main"
                         settings_open_dropdown = None
                         state = "settings"
+                        continue
+                    if btn_menu_stats.is_clicked((mx, my)):
+                        settings_return_state = "menu"
+                        settings_page = "stats"
+                        settings_open_dropdown = None
+                        state = "settings"
+                        continue
+                    if btn_menu_credits.is_clicked((mx, my)):
+                        state = "credits"
                         continue
                     if btn_menu_exit.is_clicked((mx, my)):
                         running = False
                         continue
-                
+
+                elif state == "credits":
+                    if btn_credits_back.is_clicked((mx, my)):
+                        state = "menu"
+                        continue
+
                 elif state == "settings":
                     if settings_page == "main":
                         settings_panel_rect = get_settings_panel_rect()
@@ -1220,10 +1389,6 @@ def run_game():
                         if option_clicked:
                             continue
 
-                        if btn_settings_player_stats.is_clicked((mx, my)):
-                            settings_page = "stats"
-                            settings_open_dropdown = None
-                            continue
                         if btn_settings_back.is_clicked((mx, my)):
                             state = settings_return_state
                             settings_page = "main"
@@ -1250,6 +1415,8 @@ def run_game():
                             continue
                     else:
                         if btn_settings_back.is_clicked((mx, my)):
+                            if settings_return_state:
+                                state = settings_return_state
                             settings_page = "main"
                             settings_open_dropdown = None
                             continue
@@ -1279,7 +1446,8 @@ def run_game():
                             continue
                         continue
 
-                    ai_input_locked = state == "ai" and not ai_match_started
+                    match_started = current_match_started()
+                    match_pending = not match_started
 
                     if btn_log_tab_moves.is_clicked((mx, my)):
                         log_active_tab = "moves"
@@ -1298,7 +1466,7 @@ def run_game():
                         settings_open_dropdown = None
                         state = "settings"
                         continue
-                    # Replay 
+                    # Replay
                     if game_over and move_history:
                         if btn_replay_prev.is_clicked((mx, my)):
                             if replay_index is None:
@@ -1315,17 +1483,17 @@ def run_game():
                                 replay_index += 1
                                 rebuild_position_from_replay_index()
                             continue
-                    # Start match (AI only)
-                    if state == "ai" and not ai_match_started and btn_start_match.is_clicked((mx, my)):
-                        ai_match_started = True
+                    # Start match
+                    if match_pending and btn_start_match.is_clicked((mx, my)):
+                        start_current_match()
                         continue
                     # AI level change
-                    if state == "ai" and not ai_match_started and btn_ai_level.is_clicked((mx, my)):
+                    if state == "ai" and match_pending and btn_ai_level.is_clicked((mx, my)):
                         ai_level_index = (ai_level_index + 1) % len(AI_LEVELS)
                         continue
                     # Takeback clicked
                     if not game_over and btn_takeback.is_clicked((mx, my)):
-                        if ai_input_locked:
+                        if match_pending:
                             continue
                         if move_history:
                             steps = min(2, len(move_history))
@@ -1340,7 +1508,7 @@ def run_game():
                         continue
                     # Resign clicked
                     if btn_resign.is_clicked((mx, my)):
-                        if ai_input_locked:
+                        if match_pending:
                             continue
                         if not game_over:
                             game_over = True
@@ -1358,9 +1526,9 @@ def run_game():
                         reset_game()
                         continue
 
-                    if state == "ai" and not ai_match_started:
+                    if match_pending:
                         continue
-                    
+
                     if game_over:
                         continue
                     
@@ -1422,7 +1590,9 @@ def run_game():
         lang_text = TEXT[lang]
 
         if state == "menu":
-            draw_background_layer(screen, dim_alpha=90)
+            draw_background_layer(screen, dim_alpha=110)
+        elif state == "credits":
+            draw_background_layer(screen, dim_alpha=110)
         elif state in ("pvp", "ai"):
             draw_background_layer(screen, dim_alpha=130)
         elif state == "settings":
@@ -1432,28 +1602,74 @@ def run_game():
 
         # MENU SCREEN
         if state == "menu":
-            menu_panel_rect = pygame.Rect(center_x - 190, start_y - 70, 380, 320)
-            menu_panel = pygame.Surface(menu_panel_rect.size, pygame.SRCALPHA)
-            menu_panel.fill((20, 20, 30, 170))
-            screen.blit(menu_panel, menu_panel_rect.topleft)
-            pygame.draw.rect(screen, (220, 220, 220), menu_panel_rect, 2, border_radius=12)
-            title_surf = font_title.render(lang_text["title"], True, (250, 250, 250))
-            title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 140))
+            band_height = menu_gap * 6 + 200
+            band_rect = pygame.Rect(center_x - 230, start_y - 200, 460, band_height + 170)
+            band_radius = MENU_CORNER_RADIUS
+            band_image = load_menu_background_surface(band_rect.size)
+            if band_image is not None:
+                screen.blit(band_image, band_rect.topleft)
+                overlay = pygame.Surface(band_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(overlay, (255, 255, 255, 80), overlay.get_rect(), border_radius=band_radius)
+                screen.blit(overlay, band_rect.topleft)
+            else:
+                band_surface = pygame.Surface(band_rect.size, pygame.SRCALPHA)
+                pygame.draw.rect(
+                    band_surface,
+                    (248, 244, 232, 190),
+                    band_surface.get_rect(),
+                    border_radius=band_radius,
+                )
+                screen.blit(band_surface, band_rect.topleft)
+            pygame.draw.rect(screen, (80, 60, 40), band_rect, 2, border_radius=band_radius)
+
+            title_surf = font_title.render(lang_text["title"], True, (40, 30, 25))
+            title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, start_y - 80))
             screen.blit(title_surf, title_rect)
 
-            sub_surf = font_text.render(lang_text["subtitle"], True, (220, 220, 220))
-            sub_rect = sub_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 110))
+            sub_surf = font_text.render(lang_text["subtitle"], True, (60, 50, 45))
+            sub_rect = sub_surf.get_rect(center=(WINDOW_WIDTH // 2, start_y - 52))
             screen.blit(sub_surf, sub_rect)
 
             btn_menu_pvp.label = lang_text["menu_pvp"]
             btn_menu_ai.label = lang_text["menu_ai"]
+            btn_menu_stats.label = t(settings, "settings_player_stats")
             btn_menu_settings.label = lang_text["menu_settings"]
+            btn_menu_credits.label = lang_text["menu_credits"]
             btn_menu_exit.label = lang_text["menu_exit"]
 
             btn_menu_pvp.draw(screen, font_button, enabled=True)
             btn_menu_ai.draw(screen, font_button, enabled=True)
+            btn_menu_stats.draw(screen, font_button, enabled=True)
             btn_menu_settings.draw(screen, font_button, enabled=True)
+            btn_menu_credits.draw(screen, font_button, enabled=True)
             btn_menu_exit.draw(screen, font_button, enabled=True)
+
+        elif state == "credits":
+            panel_rect = pygame.Rect(center_x - 230, start_y - 80, 460, 360)
+            panel = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+            panel.fill((248, 244, 232, 235))
+            screen.blit(panel, panel_rect.topleft)
+            pygame.draw.rect(screen, (80, 60, 40), panel_rect, 2, border_radius=14)
+
+            title_surf = font_title.render(lang_text["credits_title"], True, (50, 35, 20))
+            title_rect = title_surf.get_rect(center=(panel_rect.centerx, panel_rect.top + 40))
+            screen.blit(title_surf, title_rect)
+
+            credits_lines = [
+                lang_text["credits_line_1"],
+                lang_text["credits_line_2"],
+                lang_text["credits_line_3"],
+            ]
+            line_y = title_rect.bottom + 20
+            for line in credits_lines:
+                line_surf = font_text.render(line, True, (70, 60, 50))
+                line_rect = line_surf.get_rect(center=(panel_rect.centerx, line_y))
+                screen.blit(line_surf, line_rect)
+                line_y += 26
+
+            btn_credits_back.rect.center = (panel_rect.centerx, panel_rect.bottom - 40)
+            btn_credits_back.label = lang_text["btn_back"]
+            btn_credits_back.draw(screen, font_button, enabled=True)
 
         elif state in ("pvp", "ai"):
             board_area = pygame.Rect(MARGIN_X - 16, board_top - 16, (BOARD_COLS - 1) * CELL_SIZE + 32, (BOARD_ROWS - 1) * CELL_SIZE + 32)
@@ -1467,7 +1683,15 @@ def run_game():
             screen.blit(panel_surf, panel_rect.topleft)
             pygame.draw.rect(screen, (50, 50, 50), panel_rect, 2, border_radius=10)
 
+            start_btn_margin = 12
+            start_btn_center = (panel_rect.centerx + START_BUTTON_OFFSET_X, panel_rect.top - start_btn_margin)
+            switch_btn_midbottom_x = start_btn_center[0] - START_BUTTON_WIDTH // 2 - SWITCH_BUTTON_SPACING - SWITCH_BUTTON_SIZE // 2
+            btn_change_side.rect.size = (SWITCH_BUTTON_SIZE, SWITCH_BUTTON_SIZE)
+            btn_change_side.rect.midbottom = (switch_btn_midbottom_x, start_btn_center[1])
+
             draw_board(screen, settings, clear_surface=False)
+            match_started = current_match_started()
+            match_not_started = not match_started
             if mode is not None:
                 loser_side = None
                 badge_scale = 1.0
@@ -1488,10 +1712,11 @@ def run_game():
                     loss_badge_scale=badge_scale,
                     red_on_bottom=board.red_on_bottom,
                     active_side=current_side if mode in ("pvp", "ai") else None,
+                    match_started=match_started,
                 )
 
+
             if can_change_side_now():
-                btn_change_side.label = t(settings, "btn_change_side")
                 btn_change_side.draw(screen, font_button, enabled=True)
 
             if selected is not None:
@@ -1586,7 +1811,7 @@ def run_game():
                 screen.blit(win_surf, (panel_x, y_info))
                 y_info += 25
 
-            if mode == "ai" and not ai_match_started:
+            if match_not_started:
                 pending_surf = font_text.render(lang_text["match_not_started"], True, (60, 60, 60))
                 screen.blit(pending_surf, (panel_x, y_info))
                 y_info += 22
@@ -1653,13 +1878,14 @@ def run_game():
                 btn_ai_level.label = f"AI: {level_cfg['name']}"
 
                 btn_ai_level.rect.topleft = (panel_x + 10, panel_log_top)
-                btn_ai_level.draw(screen, font_button, enabled=not ai_match_started)
+                btn_ai_level.draw(screen, font_button, enabled=match_not_started)
                 panel_log_top += 35
 
-                btn_start_match.label = lang_text["match_started"] if ai_match_started else lang_text["btn_start_match"]
-                btn_start_match.rect.topleft = (panel_x + 10, panel_log_top)
-                btn_start_match.draw(screen, font_button, enabled=not ai_match_started)
-                panel_log_top += 35
+            if match_not_started:
+                btn_start_match.label = lang_text["btn_start_match"]
+                btn_start_match.rect.size = (START_BUTTON_WIDTH, START_BUTTON_HEIGHT)
+                btn_start_match.rect.midbottom = start_btn_center
+                btn_start_match.draw(screen, font_button, enabled=True)
 
             btn_replay_prev.label = "<"
             btn_replay_next.label = ">"
@@ -2038,16 +2264,12 @@ def run_game():
                 if layout["options"]:
                     dropdown_bottom = max(dropdown_bottom, max(opt["rect"].bottom for opt in layout["options"]))
 
-                footer_top = max(dropdown_bottom + 30, WINDOW_HEIGHT - 140)
+                footer_top = max(dropdown_bottom + 30, WINDOW_HEIGHT - 120)
                 footer_top = min(footer_top, WINDOW_HEIGHT - 70)
 
-                btn_settings_player_stats.rect.center = (settings_center_x, footer_top)
-                btn_settings_back.rect.center = (settings_center_x, footer_top + 45)
-
-                btn_settings_player_stats.label = t(settings, "settings_player_stats")
+                btn_settings_back.rect.center = (settings_center_x, footer_top)
                 btn_settings_back.label = t(settings, "btn_back")
 
-                btn_settings_player_stats.draw(screen, font_button, enabled=True)
                 btn_settings_back.draw(screen, font_button, enabled=True)
 
             else:

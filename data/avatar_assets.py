@@ -58,13 +58,32 @@ def resolve_avatar_path(path: str) -> str:
     return os.path.join(AVATAR_DIR, path)
 
 
-def load_avatar_image(path: str, size: int):
+def _grayscale_surface(src):
+    """Return a cached-size grayscale copy of the given surface."""
+    gray = src.copy()
+    w, h = gray.get_size()
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = gray.get_at((x, y))
+            lum = int(0.299 * r + 0.587 * g + 0.114 * b)
+            gray.set_at((x, y), (lum, lum, lum, a))
+    return gray
+
+
+def load_avatar_image(path: str, size: int, grayscale: bool = False):
     if not path:
         return None
     full_path = resolve_avatar_path(path)
-    key = (full_path, size)
+    key = (full_path, size, grayscale)
     if key in _avatar_cache:
         return _avatar_cache[key]
+    if grayscale:
+        base = load_avatar_image(path, size, grayscale=False)
+        if base is None:
+            return None
+        gray = _grayscale_surface(base)
+        _avatar_cache[key] = gray
+        return gray
     if not os.path.exists(full_path):
         return None
     try:

@@ -256,16 +256,29 @@ def draw_piece_preview(surface, piece, col, row, font, settings: Settings, alpha
     surface.blit(surf, rect)
 
 
-def draw_profile_avatar(surface, profile, center, size, font_avatar):
+def _grayscale_color(color):
+    lum = int(0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2])
+    return (lum, lum, lum)
+
+
+def draw_profile_avatar(surface, profile, center, size, font_avatar, grayscale=False, dim=False):
     avatar = profile.get("avatar", {})
     path = avatar.get("path")
-    img = load_avatar_image(path, size)
+    img = load_avatar_image(path, size, grayscale=grayscale)
     rect = pygame.Rect(0, 0, size, size)
     rect.center = center
     if img is not None:
         surface.blit(img, rect)
+        if dim:
+            overlay = pygame.Surface((size, size), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 90))
+            surface.blit(overlay, rect)
     else:
         color = tuple(avatar.get("color", [180, 180, 180]))
+        if grayscale:
+            color = _grayscale_color(color)
+        if dim:
+            color = _dim_color(color)
         pygame.draw.rect(surface, color, rect)
         pygame.draw.rect(surface, (0, 0, 0), rect, 2)
         initials = avatar.get("symbol") or profile.get("display_name", "?")[:2]
@@ -274,15 +287,23 @@ def draw_profile_avatar(surface, profile, center, size, font_avatar):
         surface.blit(text, text_rect)
 
 
-def draw_ai_avatar(surface, ai_level_cfg, center, size, font_avatar):
+def draw_ai_avatar(surface, ai_level_cfg, center, size, font_avatar, grayscale=False, dim=False):
     path = ai_level_cfg.get("avatar_path")
-    img = load_avatar_image(path, size)
+    img = load_avatar_image(path, size, grayscale=grayscale)
     rect = pygame.Rect(0, 0, size, size)
     rect.center = center
     if img is not None:
         surface.blit(img, rect)
+        if dim:
+            overlay = pygame.Surface((size, size), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 90))
+            surface.blit(overlay, rect)
     else:
         color = ai_level_cfg.get("color", (120, 120, 120))
+        if grayscale:
+            color = _grayscale_color(color)
+        if dim:
+            color = _dim_color(color)
         pygame.draw.rect(surface, color, rect)
         pygame.draw.rect(surface, (0, 0, 0), rect, 2)
         symbol = ai_level_cfg.get("avatar_char", "?")
@@ -437,6 +458,7 @@ def draw_side_avatars_on_board(
     loss_badge_scale=1.0,
     red_on_bottom=True,
     active_side=None,
+    match_started=True,
 ):
     timer_labels = timer_labels or {}
     timer_rects = {}
@@ -475,9 +497,21 @@ def draw_side_avatars_on_board(
             if not profile:
                 continue
             inactive = active_side is not None and side != active_side
-            name_color = _dim_color(side_colors[side]) if inactive else side_colors[side]
-            elo_color = _dim_color((50, 50, 50)) if inactive else (50, 50, 50)
-            draw_profile_avatar(surface, profile, rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            inactive_dim = match_started and inactive and loser_side is None
+            name_color = side_colors[side]
+            elo_color = (50, 50, 50)
+            if inactive_dim:
+                name_color = _dim_color(name_color)
+                elo_color = _dim_color(elo_color)
+            draw_profile_avatar(
+                surface,
+                profile,
+                rect.center,
+                AVATAR_BOARD_SIZE,
+                font_avatar,
+                grayscale=side == loser_side,
+                dim=inactive_dim,
+            )
             _draw_loss_badge(surface, rect, side, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
@@ -491,7 +525,7 @@ def draw_side_avatars_on_board(
             )
             timer_rect = _draw_timer_for_caption(surface, font_timer, caption, timer_label_for(side))
             assign_timer_rect(side, timer_rect)
-            if inactive:
+            if inactive_dim:
                 _dim_rect(surface, rect, alpha=130)
                 _dim_rect(surface, timer_rect, alpha=120)
     elif mode == "ai":
@@ -503,9 +537,21 @@ def draw_side_avatars_on_board(
 
         if human_player:
             human_inactive = active_side is not None and human_side != active_side
-            human_name_color = _dim_color(side_colors[human_side]) if human_inactive else side_colors[human_side]
-            human_elo_color = _dim_color((50, 50, 50)) if human_inactive else (50, 50, 50)
-            draw_profile_avatar(surface, human_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            human_inactive_dim = match_started and human_inactive and loser_side is None
+            human_name_color = side_colors[human_side]
+            human_elo_color = (50, 50, 50)
+            if human_inactive_dim:
+                human_name_color = _dim_color(human_name_color)
+                human_elo_color = _dim_color(human_elo_color)
+            draw_profile_avatar(
+                surface,
+                human_player,
+                bottom_rect.center,
+                AVATAR_BOARD_SIZE,
+                font_avatar,
+                grayscale=human_side == loser_side,
+                dim=human_inactive_dim,
+            )
             _draw_loss_badge(surface, bottom_rect, human_side, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
@@ -518,16 +564,28 @@ def draw_side_avatars_on_board(
             )
             human_timer = _draw_timer_for_caption(surface, font_timer, caption, timer_label_for(human_side))
             assign_timer_rect(human_side, human_timer)
-            if human_inactive:
+            if human_inactive_dim:
                 _dim_rect(surface, bottom_rect, alpha=130)
                 _dim_rect(surface, human_timer, alpha=120)
         if AI_LEVELS:
             ai_idx = ai_level_index % len(AI_LEVELS)
             ai_cfg = AI_LEVELS[ai_idx]
             ai_inactive = active_side is not None and ai_side != active_side
-            ai_name_color = _dim_color(side_colors[ai_side]) if ai_inactive else side_colors[ai_side]
-            ai_elo_color = _dim_color((50, 50, 50)) if ai_inactive else (50, 50, 50)
-            draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            ai_inactive_dim = match_started and ai_inactive and loser_side is None
+            ai_name_color = side_colors[ai_side]
+            ai_elo_color = (50, 50, 50)
+            if ai_inactive_dim:
+                ai_name_color = _dim_color(ai_name_color)
+                ai_elo_color = _dim_color(ai_elo_color)
+            draw_ai_avatar(
+                surface,
+                ai_cfg,
+                top_rect.center,
+                AVATAR_BOARD_SIZE,
+                font_avatar,
+                grayscale=ai_side == loser_side,
+                dim=ai_inactive_dim,
+            )
             _draw_loss_badge(surface, top_rect, ai_side, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
@@ -541,7 +599,7 @@ def draw_side_avatars_on_board(
             )
             ai_timer = _draw_timer_for_caption(surface, font_timer, caption, timer_label_for(ai_side))
             assign_timer_rect(ai_side, ai_timer)
-            if ai_inactive:
+            if ai_inactive_dim:
                 _dim_rect(surface, top_rect, alpha=130)
                 _dim_rect(surface, ai_timer, alpha=120)
     return timer_rects

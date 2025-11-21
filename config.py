@@ -7,7 +7,7 @@ MARGIN_Y = 120
 BOARD_OFFSET_Y = 20  # push only the board area lower without shifting other UI
 
 # Side nel width
-SIDE_PANEL_WIDTH = 300
+SIDE_PANEL_WIDTH = 350
 
 WINDOW_WIDTH = MARGIN_X * 2 + BOARD_COLS * CELL_SIZE + SIDE_PANEL_WIDTH
 WINDOW_HEIGHT = MARGIN_Y * 2 + BOARD_ROWS * CELL_SIZE
