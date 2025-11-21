@@ -19,6 +19,29 @@ from core.settings_manager import Settings
 BOARD_TOP = MARGIN_Y + BOARD_OFFSET_Y
 LOSS_BADGE_SIZE = int(AVATAR_BOARD_SIZE * 1.3)
 LOSS_BADGE_GAP = 6
+SHADOW_OFFSET = (6, 6)
+
+
+def _draw_drop_shadow(surface, rect, layers=3, offset=SHADOW_OFFSET, alpha=70, radius=12):
+    """Render a simple layered shadow behind the given rect."""
+    if rect is None:
+        return
+    off_x, off_y = offset
+    shadow_rect = rect.move(off_x, off_y)
+    pad = layers * 2
+    shadow_surf = pygame.Surface((shadow_rect.width + pad * 2, shadow_rect.height + pad * 2), pygame.SRCALPHA)
+    base_rect = pygame.Rect(pad, pad, rect.width, rect.height)
+    for i in range(layers):
+        infl = i * 4
+        a = int(alpha * max(0.0, 1 - i / max(1, layers)))
+        pygame.draw.rect(
+            shadow_surf,
+            (0, 0, 0, a),
+            base_rect.inflate(infl, infl),
+            border_radius=radius,
+        )
+    surface.blit(shadow_surf, (shadow_rect.x - pad, shadow_rect.y - pad))
+
 
 def board_to_screen(col, row):
     x = MARGIN_X + col * CELL_SIZE
@@ -34,14 +57,19 @@ def screen_to_board(x, y):
     return None, None
 
 
-def draw_board(surface, settings: Settings):
+def draw_board(surface, settings: Settings, clear_surface: bool = True):
     theme = BOARD_THEMES[settings.board_theme_index]
 
     bg_color = theme.get("bg_color", (30, 30, 30))
-    surface.fill(bg_color)
 
     board_w = (BOARD_COLS - 1) * CELL_SIZE
     board_h = (BOARD_ROWS - 1) * CELL_SIZE
+
+    if clear_surface:
+        surface.fill(bg_color)
+    else:
+        board_rect = pygame.Rect(MARGIN_X, BOARD_TOP, board_w, board_h)
+        pygame.draw.rect(surface, bg_color, board_rect)
 
     border_img = load_board_border_image(theme)
     img = load_board_image(theme)
@@ -73,7 +101,13 @@ def draw_board(surface, settings: Settings):
         border_x = int(round(MARGIN_X - ix * scale_x))
         border_y = int(round(BOARD_TOP - iy * scale_y))
 
+        border_rect = pygame.Rect(border_x, border_y, target_w, target_h)
+        _draw_drop_shadow(surface, border_rect)
         surface.blit(border_surface, (border_x, border_y))
+    else:
+        # Even without a custom border, draw a subtle shadow around the grid area.
+        board_rect = pygame.Rect(MARGIN_X, BOARD_TOP, board_w, board_h)
+        _draw_drop_shadow(surface, board_rect)
 
     # Draw the board after the border so the grid/artwork always sits on top of any opaque border center.
     if img is not None:
@@ -266,28 +300,66 @@ def _draw_text_with_shadow(surface, font, text, color, pos):
     return rect
 
 
+def _dim_rect(surface, rect, alpha=120):
+    if rect is None:
+        return
+    overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, alpha))
+    surface.blit(overlay, rect.topleft)
+
+
+def _dim_color(color, factor=0.6):
+    return tuple(max(0, min(255, int(c * factor))) for c in color)
+
+
 def _compute_caption_layout(rect, font_avatar, name_text, elo_text, align_left):
     name_w, name_h = font_avatar.size(name_text)
     elo_w, elo_h = font_avatar.size(elo_text)
     pad = 10
-    gap = 12
-    total_w = name_w + gap + elo_w
-    base_x = rect.left - total_w - pad if align_left else rect.right + pad
-    base_y = rect.centery - max(name_h, elo_h) // 2
-    return base_x, base_y, gap
+    line_gap = 4
+    block_w = max(name_w, elo_w)
+    block_h = name_h + line_gap + elo_h
+    base_x = rect.left - pad - block_w if align_left else rect.right + pad
+    base_y = rect.centery - block_h // 2
+    return base_x, base_y, block_w, line_gap, name_w, name_h, elo_w, elo_h
 
 
-def _draw_avatar_caption(surface, rect, name, elo_value, name_color, font_avatar, align_left=False):
+def _draw_avatar_caption(
+    surface,
+    rect,
+    name,
+    elo_value,
+    name_color,
+    font_avatar,
+    align_left=False,
+    elo_color=(50, 50, 50),
+):
     if not name:
         return None
     name_text = str(name)
     elo_text = f"ELO: {int(round(elo_value))}"
 
-    base_x, base_y, gap = _compute_caption_layout(rect, font_avatar, name_text, elo_text, align_left)
+    (
+        base_x,
+        base_y,
+        block_w,
+        line_gap,
+        name_w,
+        name_h,
+        elo_w,
+        _,
+    ) = _compute_caption_layout(rect, font_avatar, name_text, elo_text, align_left)
 
-    name_rect = _draw_text_with_shadow(surface, font_avatar, name_text, name_color, (base_x, base_y))
-    elo_pos = (name_rect.right + gap, base_y)
-    elo_rect = _draw_text_with_shadow(surface, font_avatar, elo_text, (50, 50, 50), elo_pos)
+    if align_left:
+        name_x = base_x + block_w - name_w
+        elo_x = base_x + block_w - elo_w
+    else:
+        name_x = base_x
+        elo_x = base_x
+
+    name_rect = _draw_text_with_shadow(surface, font_avatar, name_text, name_color, (name_x, base_y))
+    elo_pos = (elo_x, base_y + name_h + line_gap)
+    elo_rect = _draw_text_with_shadow(surface, font_avatar, elo_text, elo_color, elo_pos)
     return {"name_rect": name_rect, "elo_rect": elo_rect, "align_left": align_left}
 
 
@@ -298,9 +370,15 @@ def _draw_timer_for_caption(surface, font_timer, caption_info, timer_text):
     align_left = caption_info.get("align_left", False)
 
     timer_surf = font_timer.render(timer_text, True, (0, 0, 0))
+    if timer_text == "∞":
+        scale = 1.35
+        timer_w, timer_h = timer_surf.get_size()
+        timer_surf = pygame.transform.smoothscale(
+            timer_surf, (max(1, int(timer_w * scale)), max(1, int(timer_h * scale)))
+        )
     gap = 8
     box_width = 150
-    box_height = 50
+    box_height = 60
     if align_left:
         timer_x = get_top_avatar_rect().left - box_width * 2.9
     else:
@@ -357,83 +435,113 @@ def draw_side_avatars_on_board(
     timer_labels=None,
     loser_side=None,
     loss_badge_scale=1.0,
+    red_on_bottom=True,
+    active_side=None,
 ):
     timer_labels = timer_labels or {}
     timer_rects = {}
     last_sel = profiles_data.get("last_selected", {})
+
+    bottom_side = Side.RED if red_on_bottom else Side.BLACK
+    top_side = Side.BLACK if red_on_bottom else Side.RED
+    side_colors = {Side.RED: (200, 40, 40), Side.BLACK: (30, 30, 120)}
+
+    def timer_label_for(side: Side):
+        return timer_labels.get("red" if side == Side.RED else "black")
+
+    def assign_timer_rect(side: Side, rect):
+        if rect:
+            timer_rects["red" if side == Side.RED else "black"] = rect
+
+    bottom_rect = get_bottom_avatar_rect()
+    top_rect = get_top_avatar_rect()
+
     if mode == "pvp":
         pvp_info = last_sel.get("pvp", {})
         red_id = pvp_info.get("red_player_id", "p1")
         black_id = pvp_info.get("black_player_id", "p2")
-        red_player = find_player(profiles_data, red_id)
-        black_player = find_player(profiles_data, black_id)
+        side_profiles = {
+            Side.RED: find_player(profiles_data, red_id),
+            Side.BLACK: find_player(profiles_data, black_id),
+        }
 
-        bottom_rect = get_bottom_avatar_rect()
-        top_rect = get_top_avatar_rect()
-        if red_player:
-            draw_profile_avatar(surface, red_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-            _draw_loss_badge(surface, bottom_rect, Side.RED, loser_side, loss_badge_scale)
+        placements = [
+            (bottom_side, bottom_rect, False),
+            (top_side, top_rect, True),
+        ]
+
+        for side, rect, align_left in placements:
+            profile = side_profiles.get(side)
+            if not profile:
+                continue
+            inactive = active_side is not None and side != active_side
+            name_color = _dim_color(side_colors[side]) if inactive else side_colors[side]
+            elo_color = _dim_color((50, 50, 50)) if inactive else (50, 50, 50)
+            draw_profile_avatar(surface, profile, rect.center, AVATAR_BOARD_SIZE, font_avatar)
+            _draw_loss_badge(surface, rect, side, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
-                bottom_rect,
-                red_player.get("display_name", "Player 1"),
-                red_player.get("elo", DEFAULT_ELO),
-                (200, 40, 40),
+                rect,
+                profile.get("display_name", "Player 1" if side == Side.RED else "Player 2"),
+                profile.get("elo", DEFAULT_ELO),
+                name_color,
                 font_avatar,
+                align_left=align_left,
+                elo_color=elo_color,
             )
-            red_timer = _draw_timer_for_caption(surface, font_timer, caption, timer_labels.get("red"))
-            if red_timer:
-                timer_rects["red"] = red_timer
-        if black_player:
-            draw_profile_avatar(surface, black_player, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-            _draw_loss_badge(surface, top_rect, Side.BLACK, loser_side, loss_badge_scale)
-            caption = _draw_avatar_caption(
-                surface,
-                top_rect,
-                black_player.get("display_name", "Player 2"),
-                black_player.get("elo", DEFAULT_ELO),
-                (30, 30, 120),
-                font_avatar,
-                align_left=True,
-            )
-            black_timer = _draw_timer_for_caption(surface, font_timer, caption, timer_labels.get("black"))
-            if black_timer:
-                timer_rects["black"] = black_timer
+            timer_rect = _draw_timer_for_caption(surface, font_timer, caption, timer_label_for(side))
+            assign_timer_rect(side, timer_rect)
+            if inactive:
+                _dim_rect(surface, rect, alpha=130)
+                _dim_rect(surface, timer_rect, alpha=120)
     elif mode == "ai":
         ai_info = last_sel.get("ai", {})
         human_id = ai_info.get("human_player_id", "p1")
         human_player = find_player(profiles_data, human_id)
-        bottom_rect = get_bottom_avatar_rect()
-        top_rect = get_top_avatar_rect()
+        human_side = bottom_side
+        ai_side = top_side
+
         if human_player:
+            human_inactive = active_side is not None and human_side != active_side
+            human_name_color = _dim_color(side_colors[human_side]) if human_inactive else side_colors[human_side]
+            human_elo_color = _dim_color((50, 50, 50)) if human_inactive else (50, 50, 50)
             draw_profile_avatar(surface, human_player, bottom_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-            _draw_loss_badge(surface, bottom_rect, Side.RED, loser_side, loss_badge_scale)
+            _draw_loss_badge(surface, bottom_rect, human_side, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
                 bottom_rect,
                 human_player.get("display_name", "Player 1"),
                 human_player.get("elo", DEFAULT_ELO),
-                (200, 40, 40),
+                human_name_color,
                 font_avatar,
+                elo_color=human_elo_color,
             )
-            human_timer = _draw_timer_for_caption(surface, font_timer, caption, timer_labels.get("red"))
-            if human_timer:
-                timer_rects["red"] = human_timer
+            human_timer = _draw_timer_for_caption(surface, font_timer, caption, timer_label_for(human_side))
+            assign_timer_rect(human_side, human_timer)
+            if human_inactive:
+                _dim_rect(surface, bottom_rect, alpha=130)
+                _dim_rect(surface, human_timer, alpha=120)
         if AI_LEVELS:
             ai_idx = ai_level_index % len(AI_LEVELS)
             ai_cfg = AI_LEVELS[ai_idx]
+            ai_inactive = active_side is not None and ai_side != active_side
+            ai_name_color = _dim_color(side_colors[ai_side]) if ai_inactive else side_colors[ai_side]
+            ai_elo_color = _dim_color((50, 50, 50)) if ai_inactive else (50, 50, 50)
             draw_ai_avatar(surface, ai_cfg, top_rect.center, AVATAR_BOARD_SIZE, font_avatar)
-            _draw_loss_badge(surface, top_rect, Side.BLACK, loser_side, loss_badge_scale)
+            _draw_loss_badge(surface, top_rect, ai_side, loser_side, loss_badge_scale)
             caption = _draw_avatar_caption(
                 surface,
                 top_rect,
                 ai_cfg.get("name", "AI"),
                 ai_cfg.get("elo", DEFAULT_ELO),
-                (30, 30, 120),
+                ai_name_color,
                 font_avatar,
                 align_left=True,
+                elo_color=ai_elo_color,
             )
-            ai_timer = _draw_timer_for_caption(surface, font_timer, caption, timer_labels.get("black"))
-            if ai_timer:
-                timer_rects["black"] = ai_timer
+            ai_timer = _draw_timer_for_caption(surface, font_timer, caption, timer_label_for(ai_side))
+            assign_timer_rect(ai_side, ai_timer)
+            if ai_inactive:
+                _dim_rect(surface, top_rect, alpha=130)
+                _dim_rect(surface, ai_timer, alpha=120)
     return timer_rects

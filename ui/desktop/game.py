@@ -16,6 +16,7 @@ from core.engine.types import Side, Move, PieceType
 
 from data.localisation import TEXT, PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, t
 from data.themes import BOARD_THEMES, PIECE_THEMES
+from data.backgrounds import BACKGROUNDS
 from core.settings_manager import Settings, load_settings, save_settings
 from data.avatar_assets import ASSETS_DIR, BUILTIN_AVATARS, get_piece_sprite
 from core.profiles_manager import DEFAULT_ELO, load_profiles, save_profiles, find_player, apply_game_result_to_profiles
@@ -178,6 +179,7 @@ def run_game():
     ai_match_started = False
     settings_return_state = "menu"
     settings_page = "main"
+    settings_category = "general"
 
     timer_option_index = len(TIMER_CHOICES) - 1  # default unlimited
     time_remaining = {
@@ -187,6 +189,11 @@ def run_game():
     timer_rects_current = {}
     timer_modal_open = False
     timer_thumbnail_cache = {}
+    BACKGROUND_DIR = os.path.join(ASSETS_DIR, "bg")
+    background_modal_open = False
+    background_image_cache = {}
+    background_scaled_cache = {}
+    background_thumb_cache = {}
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
     board_right = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
@@ -253,6 +260,7 @@ def run_game():
             return [{"value": idx, "text": entry["name"][lang]} for idx, entry in enumerate(entries)]
 
         board_options = make_theme_options(BOARD_THEMES)
+        background_options = make_theme_options(BACKGROUNDS)
         body_options = make_theme_options(PIECE_BODY_THEMES)
         symbol_options = make_theme_options(PIECE_SYMBOL_SETS)
         color_options = make_theme_options(PIECE_THEMES)
@@ -283,6 +291,13 @@ def run_game():
                 "value": settings.board_theme_index % len(BOARD_THEMES) if BOARD_THEMES else 0,
                 "options": board_options,
                 "enabled": bool(board_options),
+            },
+            "background": {
+                "label": t(settings, "settings_label_background"),
+                "value": settings.background_index % len(BACKGROUNDS) if BACKGROUNDS else 0,
+                "options": background_options,
+                "enabled": bool(background_options),
+                "kind": "modal",
             },
             "piece_body": {
                 "label": t(settings, "settings_label_piece_body"),
@@ -327,12 +342,38 @@ def run_game():
 
         return items
 
-    def build_settings_layout():
+    def get_settings_panel_rect():
+        return pygame.Rect(60, 80, WINDOW_WIDTH - 120, WINDOW_HEIGHT - 160)
+
+    def settings_tab_entries():
+        return [
+            {"key": "general", "label": t(settings, "settings_section_general")},
+            {"key": "gameplay", "label": t(settings, "settings_section_gameplay")},
+            {"key": "appearance", "label": t(settings, "settings_section_appearance")},
+            {"key": "display", "label": t(settings, "settings_section_display")},
+            {"key": "audio", "label": t(settings, "settings_section_audio")},
+        ]
+
+    def build_settings_tabs(panel_rect):
+        entries = settings_tab_entries()
+        tab_width = 150
+        tab_height = 34
+        gap = 12
+        total_w = len(entries) * tab_width + (len(entries) - 1) * gap
+        start_x = panel_rect.centerx - total_w // 2
+        y = panel_rect.top + 70
+        tabs = []
+        for i, entry in enumerate(entries):
+            rect = pygame.Rect(start_x + i * (tab_width + gap), y, tab_width, tab_height)
+            tabs.append({**entry, "rect": rect})
+        content_top = y + tab_height + 24
+        return {"tabs": tabs, "content_top": content_top}
+
+    def build_settings_layout(category, content_top=150):
         items = build_settings_items()
         row_width = 520
         dropdown_width = 230
         start_x = (WINDOW_WIDTH - row_width) // 2
-        start_y = 130
         row_height = 40
         gap_y = 8
         section_gap = 10
@@ -340,18 +381,27 @@ def run_game():
         rows = []
         options = []
 
-        sections = [
-            ("appearance", t(settings, "settings_section_appearance"), ["board_theme", "piece_body", "piece_symbols", "piece_symbol_color"]),
-            ("display", t(settings, "settings_section_display"), ["display_mode", "resolution"]),
-            ("general", t(settings, "settings_section_general"), ["language"]),
-        ]
+        section_map = {
+            "general": [("general", t(settings, "settings_section_general"), ["language"])],
+            "gameplay": [("gameplay", t(settings, "settings_section_gameplay"), [])],
+            "appearance": [
+                ("appearance", t(settings, "settings_section_appearance"), ["background", "board_theme", "piece_body", "piece_symbols", "piece_symbol_color"])
+            ],
+            "display": [("display", t(settings, "settings_section_display"), ["display_mode", "resolution"])],
+            "audio": [("audio", t(settings, "settings_section_audio"), [])],
+        }
 
-        y = start_y
+        sections = section_map.get(category, section_map["general"])
+
+        y = content_top
         for _, title, keys in sections:
             headers.append({"title": title, "pos": (start_x, y)})
             y += 28
             for key in keys:
+                if key not in items:
+                    continue
                 item = items[key]
+                kind = item.get("kind", "dropdown")
                 row_rect = pygame.Rect(start_x, y, row_width, row_height)
                 value_rect = pygame.Rect(row_rect.right - dropdown_width - 12, row_rect.y + 5, dropdown_width, row_rect.height - 10)
                 rows.append(
@@ -364,10 +414,11 @@ def run_game():
                         "enabled": item["enabled"],
                         "options": item["options"],
                         "value": item["value"],
+                        "kind": kind,
                     }
                 )
 
-                if settings_open_dropdown == key and item["enabled"]:
+                if kind == "dropdown" and settings_open_dropdown == key and item["enabled"]:
                     option_height = 30
                     for idx, opt in enumerate(item["options"]):
                         opt_rect = pygame.Rect(
@@ -396,6 +447,8 @@ def run_game():
 
         if key == "board_theme":
             settings.board_theme_index = int(value) % len(BOARD_THEMES)
+        elif key == "background" and BACKGROUNDS:
+            settings.background_index = int(value) % len(BACKGROUNDS)
         elif key == "piece_body" and PIECE_BODY_THEMES:
             settings.piece_body_theme_index = int(value) % len(PIECE_BODY_THEMES)
         elif key == "piece_symbols" and PIECE_SYMBOL_SETS:
@@ -528,6 +581,148 @@ def run_game():
         close_rect = pygame.Rect(modal_rect.right - 78, modal_rect.top + 16, 60, 26)
         return {"modal_rect": modal_rect, "options": options, "close_rect": close_rect}
 
+    def get_background_entry(idx=None):
+        if not BACKGROUNDS:
+            return None
+        if idx is None:
+            idx = settings.background_index
+        idx = idx % len(BACKGROUNDS)
+        return BACKGROUNDS[idx]
+
+    def _cover_scale_image(img, target_size):
+        tw, th = target_size
+        if tw <= 0 or th <= 0:
+            return None
+        iw, ih = img.get_size()
+        if iw <= 0 or ih <= 0:
+            return None
+        scale = max(tw / iw, th / ih)
+        new_size = (max(1, int(round(iw * scale))), max(1, int(round(ih * scale))))
+        scaled = pygame.transform.smoothscale(img, new_size)
+        offset_x = max(0, (new_size[0] - tw) // 2)
+        offset_y = max(0, (new_size[1] - th) // 2)
+        rect = pygame.Rect(offset_x, offset_y, tw, th)
+        return scaled.subsurface(rect).copy()
+
+    def load_background_image(file_name):
+        if not file_name:
+            return None
+        key = file_name
+        if key in background_image_cache:
+            return background_image_cache[key]
+        full_path = os.path.join(BACKGROUND_DIR, file_name)
+        img = None
+        if os.path.exists(full_path):
+            try:
+                img = pygame.image.load(full_path)
+                img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
+            except Exception:
+                img = None
+        background_image_cache[key] = img
+        return img
+
+    def load_background_surface(size):
+        entry = get_background_entry()
+        if entry is None:
+            return None
+        file_name = entry.get("file")
+        if not file_name:
+            return None
+        key = (file_name, size)
+        if key in background_scaled_cache:
+            return background_scaled_cache[key]
+        img = load_background_image(file_name)
+        surf = _cover_scale_image(img, size) if img is not None else None
+        background_scaled_cache[key] = surf
+        return surf
+
+    def load_background_thumbnail(idx, size):
+        entry = get_background_entry(idx)
+        if entry is None:
+            return None
+        file_name = entry.get("file")
+        if not file_name:
+            return None
+        key = (file_name, size)
+        if key in background_thumb_cache:
+            return background_thumb_cache[key]
+        img = load_background_image(file_name)
+        thumb = _cover_scale_image(img, size) if img is not None else None
+        if thumb is None:
+            thumb = pygame.Surface(size)
+            thumb.fill((70, 70, 70))
+            pygame.draw.rect(thumb, (20, 20, 20), thumb.get_rect(), 2)
+        background_thumb_cache[key] = thumb
+        return thumb
+
+    def background_label(idx=None):
+        entry = get_background_entry(idx)
+        if entry is None:
+            return TEXT[settings.language]["settings_option_not_available"]
+        name_map = entry.get("name", {})
+        lang = settings.language
+        return name_map.get(lang) or name_map.get("en") or entry.get("key", "Background")
+
+    def draw_background_layer(surface, dim_alpha=90):
+        size = surface.get_size()
+        bg = load_background_surface(size)
+        if bg is None:
+            surface.fill((40, 40, 60))
+        else:
+            surface.blit(bg, (0, 0))
+            if dim_alpha > 0:
+                overlay = pygame.Surface(size, pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, dim_alpha))
+                surface.blit(overlay, (0, 0))
+
+    def set_background_index(idx):
+        if not BACKGROUNDS:
+            return
+        settings.background_index = idx % len(BACKGROUNDS)
+        save_settings(settings)
+
+    def build_background_modal_layout():
+        cols = max(1, min(3, len(BACKGROUNDS) if BACKGROUNDS else 1))
+        padding = 20
+        header_height = 90
+        thumb_size = 120
+        card_w = thumb_size + 28
+        card_h = thumb_size + 70
+
+        modal_width = padding + cols * (card_w + padding)
+        modal_width = min(WINDOW_WIDTH - 40, max(400, modal_width))
+        rows = max(1, (len(BACKGROUNDS) + cols - 1) // cols if BACKGROUNDS else 1)
+        modal_height = header_height + rows * (card_h + padding) + padding
+        modal_height = min(WINDOW_HEIGHT - 40, max(340, modal_height))
+
+        modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
+        modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+
+        options = []
+        for idx, bg in enumerate(BACKGROUNDS):
+            row = idx // cols
+            col = idx % cols
+            x = modal_rect.x + padding + col * (card_w + padding)
+            y = modal_rect.y + header_height + row * (card_h + padding)
+            rect = pygame.Rect(x, y, card_w, card_h)
+            thumb_x = rect.x + (rect.width - thumb_size) // 2
+            thumb_rect = pygame.Rect(thumb_x, rect.y + 12, thumb_size, thumb_size)
+            options.append(
+                {
+                    "index": idx,
+                    "rect": rect,
+                    "thumb_rect": thumb_rect,
+                }
+            )
+
+        close_rect = pygame.Rect(modal_rect.right - 78, modal_rect.top + 16, 60, 26)
+        return {
+            "modal_rect": modal_rect,
+            "options": options,
+            "close_rect": close_rect,
+            "thumb_size": thumb_size,
+        }
+
     def to_game_coords(pos):
         if render_scale <= 0:
             return 0, 0, False
@@ -540,7 +735,7 @@ def run_game():
 
     def reset_game(red_on_bottom=None):
         nonlocal current_side, selected, valid_moves, move_history, redo_stack, hovered_move
-        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, timer_modal_open
+        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, timer_modal_open, background_modal_open
         nonlocal slash_anim_start, slash_anim_side, slash_anim_pos, human_side, ai_side, log_follow_latest, loss_badge_anim_start, loss_badge_side
         if red_on_bottom is None:
             red_on_bottom = board.red_on_bottom
@@ -561,6 +756,7 @@ def run_game():
         paused = False
         ai_match_started = False
         timer_modal_open = False
+        background_modal_open = False
         loss_badge_anim_start = None
         loss_badge_side = None
         slash_anim_start = None
@@ -645,7 +841,7 @@ def run_game():
         if slash_anim_start is None or slash_anim_side != loser_side:
             return 0.0
         elapsed = (pygame.time.get_ticks() - slash_anim_start) / 1000.0
-        duration = 0.45
+        duration = 0.25
         if elapsed <= 0:
             return 0.0
         if elapsed >= duration:
@@ -726,7 +922,7 @@ def run_game():
                     winner = None
 
     def switch_to_menu():
-        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded, ai_match_started, hovered_move
+        nonlocal state, selected, valid_moves, in_check_side, game_over, winner, result_recorded, ai_match_started, hovered_move, background_modal_open
         state = "menu"
         selected = None
         valid_moves = []
@@ -736,6 +932,7 @@ def run_game():
         winner = None
         result_recorded = False
         ai_match_started = False
+        background_modal_open = False
 
     def timers_are_running():
         if state not in ("pvp", "ai"):
@@ -812,6 +1009,8 @@ def run_game():
                 if event.key == pygame.K_ESCAPE:
                     if timer_modal_open:
                         timer_modal_open = False
+                    elif background_modal_open:
+                        background_modal_open = False
                     elif state == "settings":
                         settings_open_dropdown = None
                         if settings_page == "stats":
@@ -832,6 +1031,28 @@ def run_game():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my, inside_game = to_game_coords(event.pos)
                 btn = event.button
+
+                if background_modal_open:
+                    layout = build_background_modal_layout()
+                    if btn == 1:
+                        if not layout["modal_rect"].collidepoint(mx, my):
+                            background_modal_open = False
+                            continue
+                        if layout["close_rect"].collidepoint(mx, my):
+                            background_modal_open = False
+                            continue
+                        clicked_background = None
+                        for opt in layout["options"]:
+                            if opt["rect"].collidepoint(mx, my) or opt["thumb_rect"].collidepoint(mx, my):
+                                clicked_background = opt["index"]
+                                break
+                        if clicked_background is not None:
+                            set_background_index(clicked_background)
+                            background_modal_open = False
+                            continue
+                        continue
+                    else:
+                        continue
 
                 if timer_modal_open:
                     layout = build_timer_modal_layout()
@@ -974,7 +1195,20 @@ def run_game():
                 
                 elif state == "settings":
                     if settings_page == "main":
-                        layout = build_settings_layout()
+                        settings_panel_rect = get_settings_panel_rect()
+                        tabs_layout = build_settings_tabs(settings_panel_rect)
+
+                        tab_clicked = False
+                        for tab in tabs_layout["tabs"]:
+                            if tab["rect"].collidepoint(mx, my):
+                                settings_category = tab["key"]
+                                settings_open_dropdown = None
+                                tab_clicked = True
+                                break
+                        if tab_clicked:
+                            continue
+
+                        layout = build_settings_layout(settings_category, content_top=tabs_layout["content_top"])
 
                         option_clicked = False
                         for opt in layout["options"]:
@@ -1001,7 +1235,11 @@ def run_game():
                             if not row["enabled"]:
                                 continue
                             if row["rect"].collidepoint(mx, my) or row["value_rect"].collidepoint(mx, my):
-                                settings_open_dropdown = None if settings_open_dropdown == row["key"] else row["key"]
+                                if row.get("kind") == "modal":
+                                    background_modal_open = True
+                                    settings_open_dropdown = None
+                                else:
+                                    settings_open_dropdown = None if settings_open_dropdown == row["key"] else row["key"]
                                 row_clicked = True
                                 break
                         if row_clicked:
@@ -1182,11 +1420,23 @@ def run_game():
 
         lang = settings.language
         lang_text = TEXT[lang]
-        
+
+        if state == "menu":
+            draw_background_layer(screen, dim_alpha=90)
+        elif state in ("pvp", "ai"):
+            draw_background_layer(screen, dim_alpha=130)
+        elif state == "settings":
+            draw_background_layer(screen, dim_alpha=110)
+        else:
+            screen.fill((40, 40, 60))
 
         # MENU SCREEN
         if state == "menu":
-            screen.fill((40, 40, 60))
+            menu_panel_rect = pygame.Rect(center_x - 190, start_y - 70, 380, 320)
+            menu_panel = pygame.Surface(menu_panel_rect.size, pygame.SRCALPHA)
+            menu_panel.fill((20, 20, 30, 170))
+            screen.blit(menu_panel, menu_panel_rect.topleft)
+            pygame.draw.rect(screen, (220, 220, 220), menu_panel_rect, 2, border_radius=12)
             title_surf = font_title.render(lang_text["title"], True, (250, 250, 250))
             title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2 - 140))
             screen.blit(title_surf, title_rect)
@@ -1206,7 +1456,18 @@ def run_game():
             btn_menu_exit.draw(screen, font_button, enabled=True)
 
         elif state in ("pvp", "ai"):
-            draw_board(screen, settings)
+            board_area = pygame.Rect(MARGIN_X - 16, board_top - 16, (BOARD_COLS - 1) * CELL_SIZE + 32, (BOARD_ROWS - 1) * CELL_SIZE + 32)
+            board_back = pygame.Surface(board_area.size, pygame.SRCALPHA)
+            board_back.fill((15, 15, 15, 140))
+            screen.blit(board_back, board_area.topleft)
+
+            panel_rect = pygame.Rect(panel_x - 20, MARGIN_Y - 30, WINDOW_WIDTH - panel_x - 20, WINDOW_HEIGHT - (MARGIN_Y - 30) - 40)
+            panel_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+            panel_surf.fill((245, 245, 245, 215))
+            screen.blit(panel_surf, panel_rect.topleft)
+            pygame.draw.rect(screen, (50, 50, 50), panel_rect, 2, border_radius=10)
+
+            draw_board(screen, settings, clear_surface=False)
             if mode is not None:
                 loser_side = None
                 badge_scale = 1.0
@@ -1225,6 +1486,8 @@ def run_game():
                     timer_labels=timer_labels_dict(),
                     loser_side=loser_side,
                     loss_badge_scale=badge_scale,
+                    red_on_bottom=board.red_on_bottom,
+                    active_side=current_side if mode in ("pvp", "ai") else None,
                 )
 
             if can_change_side_now():
@@ -1696,19 +1959,41 @@ def run_game():
             btn_replay_next.draw(screen, font_button, enabled=enabled_next)
         # SETTING MENU 
         elif state == "settings":
-            screen.fill((50, 40, 40))
+            settings_panel_rect = get_settings_panel_rect()
+            settings_panel = pygame.Surface(settings_panel_rect.size, pygame.SRCALPHA)
+            settings_panel.fill((18, 18, 24, 185))
+            screen.blit(settings_panel, settings_panel_rect.topleft)
+            pygame.draw.rect(screen, (60, 60, 60), settings_panel_rect, 2, border_radius=12)
 
             if settings_page == "main":
-                layout = build_settings_layout()
+                tabs_layout = build_settings_tabs(settings_panel_rect)
+                layout = build_settings_layout(settings_category, content_top=tabs_layout["content_top"])
 
                 title_surf = font_title.render(t(settings, "settings_title"), True, (240, 240, 240))
                 title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, 120))
                 screen.blit(title_surf, title_rect)
 
+                for tab in tabs_layout["tabs"]:
+                    is_selected = tab["key"] == settings_category
+                    base_color = (220, 220, 220) if is_selected else (180, 180, 180)
+                    border_color = (40, 40, 40)
+                    pygame.draw.rect(screen, base_color, tab["rect"], border_radius=8)
+                    pygame.draw.rect(screen, border_color, tab["rect"], 2, border_radius=8)
+                    label_color = (20, 20, 20) if is_selected else (40, 40, 40)
+                    tab_surf = font_button.render(tab["label"], True, label_color)
+                    tab_rect = tab_surf.get_rect(center=tab["rect"].center)
+                    screen.blit(tab_surf, tab_rect)
+
                 header_color = (215, 205, 205)
                 for header in layout["headers"]:
                     header_surf = font_button.render(header["title"], True, header_color)
                     screen.blit(header_surf, header["pos"])
+
+                if not layout["rows"]:
+                    info_surf = font_text.render(t(settings, "settings_no_options"), True, (225, 225, 225))
+                    info_y = layout["content_bottom"] + 10
+                    info_rect = info_surf.get_rect(center=(WINDOW_WIDTH // 2, info_y))
+                    screen.blit(info_surf, info_rect)
 
                 for row in layout["rows"]:
                     base_color = (90, 80, 80) if row["enabled"] else (70, 70, 70)
@@ -1731,7 +2016,9 @@ def run_game():
 
                     arrow_x = value_rect.right - 16
                     arrow_y = value_rect.centery
-                    if settings_open_dropdown == row["key"]:
+                    if row.get("kind") == "modal":
+                        arrow_pts = [(arrow_x - 6, arrow_y - 6), (arrow_x + 6, arrow_y), (arrow_x - 6, arrow_y + 6)]
+                    elif settings_open_dropdown == row["key"]:
                         arrow_pts = [(arrow_x - 6, arrow_y + 3), (arrow_x + 6, arrow_y + 3), (arrow_x, arrow_y - 5)]
                     else:
                         arrow_pts = [(arrow_x - 6, arrow_y - 3), (arrow_x + 6, arrow_y - 3), (arrow_x, arrow_y + 5)]
@@ -1823,6 +2110,55 @@ def run_game():
                 btn_settings_back.label = t(settings, "btn_back")
                 btn_settings_back.rect.center = (settings_center_x, WINDOW_HEIGHT - 70)
                 btn_settings_back.draw(screen, font_button, enabled=True)
+        # Background modal rendering
+        if background_modal_open and BACKGROUNDS:
+            overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 170))
+            screen.blit(overlay, (0, 0))
+
+            layout = build_background_modal_layout()
+            modal_rect = layout["modal_rect"]
+
+            pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=12)
+
+            title_text = t(settings, "background_modal_title")
+            subtitle_text = t(settings, "background_modal_subtitle")
+
+            title_surf = font_title.render(title_text, True, (25, 25, 25))
+            title_rect = title_surf.get_rect(midtop=(modal_rect.centerx, modal_rect.top + 16))
+            screen.blit(title_surf, title_rect)
+
+            subtitle_surf = font_text.render(subtitle_text, True, (60, 60, 60))
+            subtitle_rect = subtitle_surf.get_rect(midtop=(modal_rect.centerx, title_rect.bottom + 6))
+            screen.blit(subtitle_surf, subtitle_rect)
+
+            close_rect = layout["close_rect"]
+            pygame.draw.rect(screen, (225, 225, 225), close_rect, border_radius=6)
+            pygame.draw.rect(screen, (90, 90, 90), close_rect, 1, border_radius=6)
+            close_label = lang_text.get("btn_back", "Back")
+            close_surf = font_button.render(close_label, True, (20, 20, 20))
+            close_surf_rect = close_surf.get_rect(center=close_rect.center)
+            screen.blit(close_surf, close_surf_rect)
+
+            selected_idx = settings.background_index % len(BACKGROUNDS) if BACKGROUNDS else -1
+            for opt in layout["options"]:
+                rect = opt["rect"]
+                thumb_rect = opt["thumb_rect"]
+                is_selected = opt["index"] == selected_idx
+                bg = (235, 235, 235) if is_selected else (220, 220, 220)
+                border_color = (190, 60, 60) if is_selected else (90, 90, 90)
+                pygame.draw.rect(screen, bg, rect, border_radius=10)
+                pygame.draw.rect(screen, border_color, rect, 2, border_radius=10)
+
+                thumb = load_background_thumbnail(opt["index"], (thumb_rect.width, thumb_rect.height))
+                if thumb is not None:
+                    screen.blit(thumb, thumb_rect)
+
+                name_text = background_label(opt["index"])
+                name_surf = font_button.render(name_text, True, (25, 25, 25))
+                name_rect = name_surf.get_rect(midtop=(rect.centerx, thumb_rect.bottom + 8))
+                screen.blit(name_surf, name_rect)
         # Timer modal rendering
         if timer_modal_open and can_change_timer():
             overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -1910,16 +2246,32 @@ def run_game():
             btn_pause_to_menu.draw(screen, font_button, enabled=True)
 
 
+        bg_frame = load_background_surface((logical_width, base_height))
         fill_color = (0, 0, 0)
-        if not screen.get_locked():
+        if bg_frame is not None:
+            frame_surface.blit(bg_frame, (0, 0))
             try:
-                fill_color = screen.get_at((0, 0))[:3]
+                fill_color = bg_frame.get_at((0, 0))[:3]
             except Exception:
                 fill_color = (0, 0, 0)
-        frame_surface.fill(fill_color)
+        else:
+            if not screen.get_locked():
+                try:
+                    fill_color = screen.get_at((0, 0))[:3]
+                except Exception:
+                    fill_color = (0, 0, 0)
+            frame_surface.fill(fill_color)
         pad_x = (logical_width - base_width) // 2
         frame_surface.blit(screen, (pad_x, 0))
-        window_surface.fill(fill_color)
+        win_w, win_h = window_surface.get_size()
+        bg_window = load_background_surface((win_w, win_h))
+        if bg_window is not None:
+            window_surface.blit(bg_window, (0, 0))
+            dim_overlay = pygame.Surface((win_w, win_h), pygame.SRCALPHA)
+            dim_overlay.fill((0, 0, 0, 120))
+            window_surface.blit(dim_overlay, (0, 0))
+        else:
+            window_surface.fill(fill_color)
         scaled_surface = pygame.transform.smoothscale(frame_surface, render_size)
         window_surface.blit(scaled_surface, render_offset)
         pygame.display.flip()
