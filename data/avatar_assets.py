@@ -5,7 +5,7 @@ from config import CELL_SIZE
 from core.engine.types import PieceType, Side
 from core.settings_manager import Settings
 from data.localisation import PIECE_BODY_THEMES, PIECE_SYMBOL_SETS
-from data.themes import PIECE_THEMES
+from data.themes import default_piece_theme
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
@@ -214,7 +214,7 @@ def load_piece_symbol_image(symbol_index, piece_key, side, size):
 
 
 def get_symbol_color_for_side(settings: Settings, side: Side):
-    theme = PIECE_THEMES[settings.piece_theme_index]
+    theme = default_piece_theme()
     return theme["red_color"] if side == Side.RED else theme["black_color"]
 
 

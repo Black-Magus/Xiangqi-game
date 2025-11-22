@@ -75,6 +75,7 @@ class Button:
         bg_disabled = style.get("bg_disabled", (180, 180, 180))
         border_color = style.get("border_color", (60, 60, 60))
         disabled_alpha = style.get("disabled_alpha", 170)
+        angle = style.get("image_angle", 0)
 
         circle_surface = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
         center = (diameter // 2, diameter // 2)
@@ -86,8 +87,20 @@ class Button:
                 scale = max(diameter / iw, diameter / ih)
                 target_size = (max(1, int(iw * scale)), max(1, int(ih * scale)))
                 img_scaled = pygame.transform.smoothscale(img, target_size)
-                img_rect = img_scaled.get_rect(center=center)
-                circle_surface.blit(img_scaled, img_rect)
+                draw_img = img_scaled
+                if angle:
+                    rotated = pygame.transform.rotozoom(draw_img, angle, 1.0)
+                    rw, rh = rotated.get_size()
+                    if rw > 0 and rh > 0:
+                        fit_scale = min(diameter / rw, diameter / rh, 1.0)
+                        if fit_scale != 1.0:
+                            rotated = pygame.transform.smoothscale(
+                                rotated,
+                                (max(1, int(rw * fit_scale)), max(1, int(rh * fit_scale))),
+                            )
+                    draw_img = rotated
+                img_rect = draw_img.get_rect(center=center)
+                circle_surface.blit(draw_img, img_rect)
                 mask = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
                 pygame.draw.circle(mask, (255, 255, 255, 255), center, diameter // 2)
                 circle_surface.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)

@@ -1,4 +1,5 @@
 import os
+import math
 import pygame
 
 from config import (
@@ -15,7 +16,7 @@ from core.engine.board import Board
 from core.engine.types import Side, Move, PieceType
 
 from data.localisation import TEXT, PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, t
-from data.themes import BOARD_THEMES, PIECE_THEMES
+from data.themes import BOARD_THEMES
 from data.backgrounds import BACKGROUNDS
 from core.settings_manager import Settings, load_settings, save_settings
 from data.avatar_assets import ASSETS_DIR, BUILTIN_AVATARS, get_piece_sprite
@@ -172,6 +173,10 @@ def run_game():
     slash_anim_start = None
     slash_anim_side = None
     slash_anim_pos = None
+    switch_anim_start = None
+    switch_angle_from = 0 if board.red_on_bottom else SWITCH_ROTATION_STEP
+    switch_angle_to = switch_angle_from
+    switch_cooldown_until = 0
 
     state = "menu"
     mode = None
@@ -212,8 +217,10 @@ def run_game():
     START_BUTTON_OFFSET_X = 30  # nudge to the right of center
     SWITCH_BUTTON_SIZE = 44
     SWITCH_BUTTON_SPACING = 12
+    SWITCH_ROTATION_STEP = 180
+    SWITCH_ROTATION_DURATION = 0.5
 
-    switch_image_path = os.path.join(ASSETS_DIR, "components", "switch.jpg")
+    switch_image_path = os.path.join(ASSETS_DIR, "components", "switch.png")
     switch_image = None
     try:
         switch_image = pygame.image.load(switch_image_path).convert_alpha()
@@ -335,7 +342,6 @@ def run_game():
         background_options = make_theme_options(BACKGROUNDS)
         body_options = make_theme_options(PIECE_BODY_THEMES)
         symbol_options = make_theme_options(PIECE_SYMBOL_SETS)
-        color_options = make_theme_options(PIECE_THEMES)
 
         display_modes = [
             {"value": "window", "text": t(settings, "display_window")},
@@ -382,12 +388,6 @@ def run_game():
                 "value": settings.piece_symbol_set_index % len(PIECE_SYMBOL_SETS) if PIECE_SYMBOL_SETS else 0,
                 "options": symbol_options,
                 "enabled": bool(symbol_options),
-            },
-            "piece_symbol_color": {
-                "label": t(settings, "settings_label_piece_symbol_color"),
-                "value": settings.piece_theme_index % len(PIECE_THEMES) if PIECE_THEMES else 0,
-                "options": color_options,
-                "enabled": bool(color_options),
             },
             "display_mode": {
                 "label": t(settings, "settings_label_display_mode"),
@@ -457,7 +457,7 @@ def run_game():
             "general": [("general", t(settings, "settings_section_general"), ["language"])],
             "gameplay": [("gameplay", t(settings, "settings_section_gameplay"), [])],
             "appearance": [
-                ("appearance", t(settings, "settings_section_appearance"), ["background", "board_theme", "piece_body", "piece_symbols", "piece_symbol_color"])
+                ("appearance", t(settings, "settings_section_appearance"), ["background", "board_theme", "piece_body", "piece_symbols"])
             ],
             "display": [("display", t(settings, "settings_section_display"), ["display_mode", "resolution"])],
             "audio": [("audio", t(settings, "settings_section_audio"), [])],
@@ -525,8 +525,6 @@ def run_game():
             settings.piece_body_theme_index = int(value) % len(PIECE_BODY_THEMES)
         elif key == "piece_symbols" and PIECE_SYMBOL_SETS:
             settings.piece_symbol_set_index = int(value) % len(PIECE_SYMBOL_SETS)
-        elif key == "piece_symbol_color":
-            settings.piece_theme_index = int(value) % len(PIECE_THEMES)
         elif key == "display_mode":
             settings.display_mode = value
             apply_display_mode()
@@ -877,6 +875,7 @@ def run_game():
         nonlocal current_side, selected, valid_moves, move_history, redo_stack, hovered_move
         nonlocal in_check_side, game_over, winner, result_recorded, replay_index, paused, ai_match_started, pvp_match_started, timer_modal_open, background_modal_open
         nonlocal slash_anim_start, slash_anim_side, slash_anim_pos, human_side, ai_side, log_follow_latest, loss_badge_anim_start, loss_badge_side
+        nonlocal switch_anim_start, switch_cooldown_until, switch_angle_from, switch_angle_to
         if red_on_bottom is None:
             red_on_bottom = board.red_on_bottom
         board.reset(red_on_bottom=red_on_bottom)
@@ -904,6 +903,11 @@ def run_game():
         slash_anim_side = None
         slash_anim_pos = None
         log_follow_latest = True
+        switch_anim_start = None
+        switch_cooldown_until = 0
+        base_switch_angle = 0 if board.red_on_bottom else SWITCH_ROTATION_STEP
+        switch_angle_from = base_switch_angle
+        switch_angle_to = base_switch_angle
         reset_timers_to_full()
 
     def change_side_by_swapping_pieces():
@@ -1018,6 +1022,36 @@ def run_game():
         progress = min(1.0, elapsed / duration)
         falloff = (1.0 - progress) * (1.0 - progress)
         return 1.0 + (start_scale - 1.0) * falloff
+
+    def avatar_shake_dx(side):
+        if side not in (Side.RED, Side.BLACK):
+            return 0
+        if loss_badge_anim_start is None or loss_badge_side != side:
+            return 0
+        elapsed = (pygame.time.get_ticks() - loss_badge_anim_start) / 1000.0
+        duration = 0.3
+        if elapsed < 0 or elapsed > duration:
+            return 0
+        progress = elapsed / duration
+        amplitude = 8 * (1.0 - progress)
+        shakes = 10
+        return int(round(math.sin(progress * shakes * math.pi) * amplitude))
+
+    def switch_rotation_angle():
+        nonlocal switch_anim_start, switch_angle_from, switch_angle_to
+        if switch_anim_start is None:
+            return switch_angle_to
+        elapsed = (pygame.time.get_ticks() - switch_anim_start) / 1000.0
+        duration = SWITCH_ROTATION_DURATION
+        if elapsed <= 0:
+            return switch_angle_from
+        if elapsed >= duration:
+            switch_anim_start = None
+            switch_angle_from = switch_angle_to % 360
+            switch_angle_to = switch_angle_from
+            return switch_angle_to
+        progress = min(1.0, elapsed / duration)
+        return switch_angle_from + (switch_angle_to - switch_angle_from) * progress
 
     def clamp_replay_index():
         nonlocal replay_index
@@ -1322,6 +1356,10 @@ def run_game():
                             continue
 
                 if btn != 1:
+                    if btn == 3 and state in ("pvp", "ai") and selected is not None:
+                        selected = None
+                        valid_moves = []
+                        hovered_move = None
                     continue
 
                 lang = settings.language
@@ -1456,7 +1494,14 @@ def run_game():
                         log_active_tab = "captured"
                         continue
                     if btn_change_side.is_clicked((mx, my)) and can_change_side_now():
-                        change_side_by_swapping_pieces()
+                        now_ms = pygame.time.get_ticks()
+                        if now_ms >= switch_cooldown_until:
+                            prev_angle = switch_rotation_angle()
+                            change_side_by_swapping_pieces()
+                            switch_angle_from = prev_angle
+                            switch_angle_to = prev_angle + SWITCH_ROTATION_STEP
+                            switch_anim_start = now_ms
+                            switch_cooldown_until = now_ms + 700
                         continue
 
                     # Setting button clicked
@@ -1688,12 +1733,13 @@ def run_game():
             switch_btn_midbottom_x = start_btn_center[0] - START_BUTTON_WIDTH // 2 - SWITCH_BUTTON_SPACING - SWITCH_BUTTON_SIZE // 2
             btn_change_side.rect.size = (SWITCH_BUTTON_SIZE, SWITCH_BUTTON_SIZE)
             btn_change_side.rect.midbottom = (switch_btn_midbottom_x, start_btn_center[1])
+            btn_change_side.style["image_angle"] = switch_rotation_angle()
 
             draw_board(screen, settings, clear_surface=False)
             match_started = current_match_started()
             match_not_started = not match_started
+            loser_side = None
             if mode is not None:
-                loser_side = None
                 badge_scale = 1.0
                 if game_over and winner in (Side.RED, Side.BLACK):
                     loser_side = Side.BLACK if winner == Side.RED else Side.RED
@@ -1713,6 +1759,7 @@ def run_game():
                     red_on_bottom=board.red_on_bottom,
                     active_side=current_side if mode in ("pvp", "ai") else None,
                     match_started=match_started,
+                    shake_dx_fn=avatar_shake_dx,
                 )
 
 
@@ -1830,8 +1877,18 @@ def run_game():
                 black_player = find_player(profiles_data, black_id)
 
                 if red_player:
-                    center = (panel_x + small_size // 2 + 4, y_players + small_size // 2)
-                    draw_profile_avatar(screen, red_player, center, small_size, font_avatar)
+                    center = (
+                        panel_x + small_size // 2 + 4 + avatar_shake_dx(Side.RED),
+                        y_players + small_size // 2,
+                    )
+                    draw_profile_avatar(
+                        screen,
+                        red_player,
+                        center,
+                        small_size,
+                        font_avatar,
+                        grayscale=loser_side == Side.RED,
+                    )
                     label = t(settings, "label_red_player").format(name=red_player.get("display_name", "Player 1"))
                     color = (200, 0, 0) if current_side == Side.RED else (0, 0, 0)
                     txt = font_text.render(label, True, color)
@@ -1839,8 +1896,18 @@ def run_game():
                     y_players += small_size + 6
 
                 if black_player:
-                    center = (panel_x + small_size // 2 + 4, y_players + small_size // 2)
-                    draw_profile_avatar(screen, black_player, center, small_size, font_avatar)
+                    center = (
+                        panel_x + small_size // 2 + 4 + avatar_shake_dx(Side.BLACK),
+                        y_players + small_size // 2,
+                    )
+                    draw_profile_avatar(
+                        screen,
+                        black_player,
+                        center,
+                        small_size,
+                        font_avatar,
+                        grayscale=loser_side == Side.BLACK,
+                    )
                     label = t(settings, "label_black_player").format(name=black_player.get("display_name", "Player 2"))
                     color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
                     txt = font_text.render(label, True, color)
@@ -1851,8 +1918,18 @@ def run_game():
                 human_id = ai_info.get("human_player_id", "p1")
                 human_player = find_player(profiles_data, human_id)
                 if human_player:
-                    center = (panel_x + small_size // 2 + 4, y_players + small_size // 2)
-                    draw_profile_avatar(screen, human_player, center, small_size, font_avatar)
+                    center = (
+                        panel_x + small_size // 2 + 4 + avatar_shake_dx(human_side),
+                        y_players + small_size // 2,
+                    )
+                    draw_profile_avatar(
+                        screen,
+                        human_player,
+                        center,
+                        small_size,
+                        font_avatar,
+                        grayscale=loser_side == human_side,
+                    )
                     label = t(settings, "label_red_player").format(
                         name=human_player.get("display_name", "Player 1")
                     )
@@ -1862,8 +1939,18 @@ def run_game():
                     y_players += small_size + 6
 
                 ai_cfg = AI_LEVELS[ai_level_index]
-                center = (panel_x + small_size // 2 + 4, y_players + small_size // 2)
-                draw_ai_avatar(screen, ai_cfg, center, small_size, font_avatar)
+                center = (
+                    panel_x + small_size // 2 + 4 + avatar_shake_dx(ai_side),
+                    y_players + small_size // 2,
+                )
+                draw_ai_avatar(
+                    screen,
+                    ai_cfg,
+                    center,
+                    small_size,
+                    font_avatar,
+                    grayscale=loser_side == ai_side,
+                )
                 label = t(settings, "label_ai_player").format(name=ai_cfg["name"])
                 color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
                 txt = font_text.render(label, True, color)

@@ -45,7 +45,6 @@ TEXT = {
         "settings_display": "Display: {mode}",
         "settings_piece_body": "Piece body: {name}",
         "settings_piece_icons": "Piece icons: {name}",
-        "settings_piece_symbol_color": "Symbol color: {name}",
         "settings_resolution_ratio": "Resolution ratio: {mode}",
         "settings_section_appearance": "Appearance",
         "settings_section_display": "Display",
@@ -56,7 +55,6 @@ TEXT = {
         "settings_label_background": "Background",
         "settings_label_piece_body": "Piece body",
         "settings_label_piece_icons": "Piece icons",
-        "settings_label_piece_symbol_color": "Symbol color",
         "settings_label_display_mode": "Display mode",
         "settings_label_resolution": "Resolution",
         "settings_label_language": "Language",
@@ -141,7 +139,6 @@ TEXT = {
         "settings_display": "Hiển thị: {mode}",
         "settings_piece_body": "Nền quân: {name}",
         "settings_piece_icons": "Biểu tượng: {name}",
-        "settings_piece_symbol_color": "Màu biểu tượng: {name}",
         "settings_resolution_ratio": "Tỉ lệ màn hình: {mode}",
         "settings_section_appearance": "Giao diện",
         "settings_section_display": "Hiển thị",
@@ -152,7 +149,6 @@ TEXT = {
         "settings_label_background": "Hình nền",
         "settings_label_piece_body": "Nền quân",
         "settings_label_piece_icons": "Biểu tượng quân",
-        "settings_label_piece_symbol_color": "Màu biểu tượng",
         "settings_label_display_mode": "Chế độ hiển thị",
         "settings_label_resolution": "Tỉ lệ màn hình",
         "settings_label_language": "Ngôn ngữ",
@@ -214,7 +210,7 @@ PIECE_SYMBOL_SETS = [
     {
         "key": "hanzi_classic",
         "name": {"en": "Chinese classic", "vi": "Hán cổ điển"},
-        "folder": "hanzi_classic",
+        "folder": "classic1",
         "files": {
             "red": {
                 "general": "red_general.png",

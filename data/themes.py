@@ -44,6 +44,13 @@ BOARD_THEMES = [
     },
 ]
 
+
+def default_piece_theme():
+    """Return the built-in piece colour theme (fixed, no user selection)."""
+    if PIECE_THEMES:
+        return PIECE_THEMES[0]
+    return {"red_color": (220, 50, 50), "black_color": (30, 30, 30)}
+
 PIECE_THEMES = [
     {
         "key": "red_black",

@@ -12,29 +12,29 @@
           50
         ],
         "symbol": "C",
-        "path": "C:/Users/cuong/OneDrive/Pictures/Screenshot 2025-11-26 075713.png"
+        "path": "player1.png"
       },
       "stats": {
         "overall": {
-          "games": 184,
-          "wins": 70,
-          "losses": 113,
+          "games": 223,
+          "wins": 82,
+          "losses": 140,
           "draws": 1
         },
         "vs_ai": {
-          "games": 83,
-          "wins": 19,
-          "losses": 64,
+          "games": 108,
+          "wins": 23,
+          "losses": 85,
           "draws": 0
         },
         "vs_human": {
-          "games": 101,
-          "wins": 51,
-          "losses": 49,
+          "games": 115,
+          "wins": 59,
+          "losses": 55,
           "draws": 1
         }
       },
-      "elo": 1018
+      "elo": 1013
     },
     {
       "id": "p2",
@@ -51,9 +51,9 @@
       },
       "stats": {
         "overall": {
-          "games": 102,
-          "wins": 49,
-          "losses": 53,
+          "games": 116,
+          "wins": 55,
+          "losses": 61,
           "draws": 0
         },
         "vs_ai": {
@@ -63,13 +63,13 @@
           "draws": 0
         },
         "vs_human": {
-          "games": 102,
-          "wins": 49,
-          "losses": 53,
+          "games": 116,
+          "wins": 55,
+          "losses": 61,
           "draws": 0
         }
       },
-      "elo": 1063
+      "elo": 1033
     }
   ],
   "last_selected": {

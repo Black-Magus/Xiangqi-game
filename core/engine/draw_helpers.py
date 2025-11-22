@@ -3,7 +3,7 @@ import pygame
 from config import BOARD_COLS, BOARD_ROWS, CELL_SIZE, MARGIN_X, MARGIN_Y, BOARD_OFFSET_Y
 from core.engine.types import Side, PieceType
 
-from data.themes import BOARD_THEMES, PIECE_THEMES
+from data.themes import BOARD_THEMES, default_piece_theme
 from data.avatar_assets import (
     AVATAR_BOARD_SIZE,
     get_piece_sprite,
@@ -167,7 +167,7 @@ def draw_piece(surface, piece, col, row, font, settings: Settings, highlight_col
     cx = x
     cy = y
     radius = CELL_SIZE // 2 - 4
-    theme = PIECE_THEMES[settings.piece_theme_index]
+    theme = default_piece_theme()
     color = theme["red_color"] if piece.side == Side.RED else theme["black_color"]
 
     pygame.draw.circle(surface, (245, 230, 200), (cx, cy), radius)
@@ -221,7 +221,7 @@ def draw_piece_preview(surface, piece, col, row, font, settings: Settings, alpha
         surface.blit(preview, rect)
         return
 
-    theme = PIECE_THEMES[settings.piece_theme_index]
+    theme = default_piece_theme()
     color = theme["red_color"] if piece.side == Side.RED else theme["black_color"]
     bg_color = (245, 230, 200, alpha)
     outline_color = (*color, alpha)
@@ -459,6 +459,7 @@ def draw_side_avatars_on_board(
     red_on_bottom=True,
     active_side=None,
     match_started=True,
+    shake_dx_fn=None,
 ):
     timer_labels = timer_labels or {}
     timer_rects = {}
@@ -490,12 +491,14 @@ def draw_side_avatars_on_board(
         placements = [
             (bottom_side, bottom_rect, False),
             (top_side, top_rect, True),
-        ]
+        ] 
 
         for side, rect, align_left in placements:
             profile = side_profiles.get(side)
             if not profile:
                 continue
+            dx = shake_dx_fn(side) if shake_dx_fn else 0
+            rect = rect.move(dx, 0)
             inactive = active_side is not None and side != active_side
             inactive_dim = match_started and inactive and loser_side is None
             name_color = side_colors[side]
@@ -536,6 +539,8 @@ def draw_side_avatars_on_board(
         ai_side = top_side
 
         if human_player:
+            dx = shake_dx_fn(human_side) if shake_dx_fn else 0
+            bottom_rect = bottom_rect.move(dx, 0)
             human_inactive = active_side is not None and human_side != active_side
             human_inactive_dim = match_started and human_inactive and loser_side is None
             human_name_color = side_colors[human_side]
@@ -570,6 +575,8 @@ def draw_side_avatars_on_board(
         if AI_LEVELS:
             ai_idx = ai_level_index % len(AI_LEVELS)
             ai_cfg = AI_LEVELS[ai_idx]
+            dx = shake_dx_fn(ai_side) if shake_dx_fn else 0
+            top_rect = top_rect.move(dx, 0)
             ai_inactive = active_side is not None and ai_side != active_side
             ai_inactive_dim = match_started and ai_inactive and loser_side is None
             ai_name_color = side_colors[ai_side]
