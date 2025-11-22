@@ -17,6 +17,7 @@ class Settings:
         self.piece_symbol_set_index = 0
         self.resolution_ratio = "fit"  # "fit" or "wide"
         self.background_index = 0
+        self.side_panel_background_index = 0
 
 
 
@@ -38,6 +39,7 @@ def settings_to_dict(settings: Settings) -> Dict[str, Any]:
         "piece_symbol_set_index": settings.piece_symbol_set_index,
         "resolution_ratio": settings.resolution_ratio,
         "background_index": settings.background_index,
+        "side_panel_background_index": settings.side_panel_background_index,
     }
 
 
@@ -67,6 +69,13 @@ def load_settings() -> Settings:
             s.resolution_ratio = data["resolution_ratio"]
         if "background_index" in data and BACKGROUNDS:
             s.background_index = int(data["background_index"]) % len(BACKGROUNDS)
+        # side panel backgrounds may be defined separately
+        try:
+            from data.side_panel_backgrounds import SIDE_PANEL_BACKGROUNDS
+        except Exception:
+            SIDE_PANEL_BACKGROUNDS = None
+        if "side_panel_background_index" in data and SIDE_PANEL_BACKGROUNDS:
+            s.side_panel_background_index = int(data["side_panel_background_index"]) % len(SIDE_PANEL_BACKGROUNDS)
 
     return s
 

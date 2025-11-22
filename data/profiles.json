@@ -16,14 +16,14 @@
       },
       "stats": {
         "overall": {
-          "games": 223,
-          "wins": 82,
+          "games": 226,
+          "wins": 85,
           "losses": 140,
           "draws": 1
         },
         "vs_ai": {
-          "games": 108,
-          "wins": 23,
+          "games": 111,
+          "wins": 26,
           "losses": 85,
           "draws": 0
         },
@@ -34,7 +34,7 @@
           "draws": 1
         }
       },
-      "elo": 1013
+      "elo": 1082
     },
     {
       "id": "p2",
