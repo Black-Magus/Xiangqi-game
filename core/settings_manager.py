@@ -18,6 +18,9 @@ class Settings:
         self.resolution_ratio = "fit"  # "fit" or "wide"
         self.background_index = 0
         self.side_panel_background_index = 0
+        # log box transparency settings (0..255). If disabled, the log box is opaque.
+        self.log_box_transparency_enabled = True
+        self.log_box_transparency = 200
 
 
 
@@ -40,6 +43,8 @@ def settings_to_dict(settings: Settings) -> Dict[str, Any]:
         "resolution_ratio": settings.resolution_ratio,
         "background_index": settings.background_index,
         "side_panel_background_index": settings.side_panel_background_index,
+        "log_box_transparency_enabled": settings.log_box_transparency_enabled,
+        "log_box_transparency": settings.log_box_transparency,
     }
 
 
@@ -76,6 +81,17 @@ def load_settings() -> Settings:
             SIDE_PANEL_BACKGROUNDS = None
         if "side_panel_background_index" in data and SIDE_PANEL_BACKGROUNDS:
             s.side_panel_background_index = int(data["side_panel_background_index"]) % len(SIDE_PANEL_BACKGROUNDS)
+        if "log_box_transparency_enabled" in data:
+            try:
+                s.log_box_transparency_enabled = bool(data["log_box_transparency_enabled"])
+            except Exception:
+                s.log_box_transparency_enabled = True
+        if "log_box_transparency" in data:
+            try:
+                v = int(data["log_box_transparency"]) if data["log_box_transparency"] is not None else 200
+                s.log_box_transparency = max(0, min(255, v))
+            except Exception:
+                s.log_box_transparency = 200
 
     return s
 

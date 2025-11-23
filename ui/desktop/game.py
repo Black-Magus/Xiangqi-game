@@ -136,7 +136,7 @@ def run_game():
     font_piece = pygame.font.SysFont("SimHei", 28)
     font_text = pygame.font.SysFont("Consolas", 18)
     font_button = pygame.font.SysFont("Consolas", 16)
-    font_title = pygame.font.SysFont("SimHei", 40, bold=True)
+    font_title = pygame.font.SysFont("SimHei", 40, bold=False)
     font_avatar = pygame.font.SysFont("Consolas", 16, bold=True)
     font_timer = pygame.font.SysFont("Consolas", 24, bold=True)
 
@@ -217,7 +217,7 @@ def run_game():
     board_top = MARGIN_Y + BOARD_OFFSET_Y
 
     PANEL_MIN_LOG_TOP = MARGIN_Y + 160
-    LOG_BOX_WIDTH = 220
+    LOG_BOX_WIDTH = 321
     LOG_BOX_HEIGHT = 260
     START_BUTTON_HEIGHT = 48
     START_BUTTON_WIDTH = LOG_BOX_WIDTH
@@ -226,6 +226,10 @@ def run_game():
     SWITCH_BUTTON_SPACING = 12
     SWITCH_ROTATION_STEP = 180
     SWITCH_ROTATION_DURATION = 0.5
+
+    # Panel width used by side-panel buttons
+    PANEL_WIDTH = LOG_BOX_WIDTH
+    RESIGN_BUTTON_GAP = 20
 
     switch_image_path = os.path.join(ASSETS_DIR, "components", "switch.png")
     switch_image = None
@@ -279,11 +283,45 @@ def run_game():
         "image_inset": 6,
         "disabled_alpha": 150,
     }
+    # Takeback button style (golden)
+    takeback_button_style = {
+        "variant": "gradient",
+        "colors_enabled": ((255, 255, 90), (200, 140, 0)),
+        "colors_disabled": ((200, 180, 140), (150, 120, 80)),
+        "border_radius": 10,
+        "border_color": (120, 80, 0),
+        "text_color_enabled": (0, 0, 0),
+        "text_color_disabled": (60, 60, 60),
+        "gloss": True,
+        "gloss_color": (255, 255, 255, 70),
+    }
+    # Tab button style (black with white text)
+    tab_button_style = {
+        "variant": "gradient",
+        "colors_enabled": ((40, 40, 40), (0, 0, 0)),
+        "colors_disabled": ((100, 100, 100), (80, 80, 80)),
+        "border_radius": 8,
+        "border_color": (20, 20, 20),
+        "text_color_enabled": (255, 255, 255),
+        "text_color_disabled": (200, 200, 200),
+    }
+    # AI change button style (white bg, red text)
+    ai_change_button_style = {
+        "variant": "gradient",
+        "colors_enabled": ((255, 255, 255), (240, 240, 240)),
+        "colors_disabled": ((230, 230, 230), (200, 200, 200)),
+        "border_radius": 10,
+        "border_color": (160, 40, 40),
+        "text_color_enabled": (200, 30, 30),
+        "text_color_disabled": (150, 150, 150),
+    }
 
-    btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 153, 190, 30))
-    btn_takeback = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 120, 190, 30))
-    btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, 90, 30), style=resign_button_style)
-    btn_new_game = Button(pygame.Rect(panel_x + 100, WINDOW_HEIGHT - 80, 90, 30), style=new_game_button_style)
+    btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 153, PANEL_WIDTH, 30))
+    btn_takeback = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 120, PANEL_WIDTH, 30))
+    # Split the bottom row into two buttons (Resign / New game) that expand to fill the panel
+    half_w = (PANEL_WIDTH - RESIGN_BUTTON_GAP) // 2
+    btn_resign = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 80, half_w, 30), style=resign_button_style)
+    btn_new_game = Button(pygame.Rect(panel_x + half_w + RESIGN_BUTTON_GAP, WINDOW_HEIGHT - 80, PANEL_WIDTH - half_w - RESIGN_BUTTON_GAP, 30), style=new_game_button_style)
     btn_ai_level = Button(pygame.Rect(panel_x + 30, MARGIN_Y + 95, 160, 28))
     btn_start_match = Button(
         pygame.Rect(panel_x, MARGIN_Y - START_BUTTON_HEIGHT - 20, START_BUTTON_WIDTH, START_BUTTON_HEIGHT),
@@ -310,6 +348,12 @@ def run_game():
 
     btn_log_tab_moves = Button(pygame.Rect(panel_x, PANEL_MIN_LOG_TOP, 100, 24))
     btn_log_tab_captured = Button(pygame.Rect(panel_x + 110, PANEL_MIN_LOG_TOP, 100, 24))
+
+    # Apply styles to takeback and log tab buttons
+    btn_takeback.style = takeback_button_style
+    btn_log_tab_moves.style = tab_button_style
+    btn_log_tab_captured.style = tab_button_style
+    btn_ai_level.style = ai_change_button_style
 
 
     # Pause modal
@@ -391,6 +435,14 @@ def run_game():
                 "enabled": bool(SIDE_PANEL_BACKGROUNDS),
                 "kind": "modal",
             },
+            "log_box_transparency": {
+                "label": t(settings, "settings_label_log_transparency"),
+                "value": settings.log_box_transparency,
+                "options": [],
+                "enabled": True,
+                "kind": "slider",
+                "selected_label": f"{int(settings.log_box_transparency / 255 * 100)}%",
+            },
             "piece_body": {
                 "label": t(settings, "settings_label_piece_body"),
                 "value": settings.piece_body_theme_index % len(PIECE_BODY_THEMES) if PIECE_BODY_THEMES else 0,
@@ -423,8 +475,11 @@ def run_game():
             },
         }
 
-        for item in items.values():
-            item["selected_label"] = current_label(item["options"], item["value"])
+        for key, item in items.items():
+            if item.get("kind") == "slider":
+                # keep selected_label already set for slider
+                continue
+            item["selected_label"] = current_label(item["options"], item["value"]) if item.get("options") else str(item.get("value"))
 
         return items
 
@@ -471,7 +526,7 @@ def run_game():
             "general": [("general", t(settings, "settings_section_general"), ["language"])],
             "gameplay": [("gameplay", t(settings, "settings_section_gameplay"), [])],
             "appearance": [
-                ("appearance", t(settings, "settings_section_appearance"), ["side_panel_background", "background", "board_theme", "piece_body", "piece_symbols"])
+                ("appearance", t(settings, "settings_section_appearance"), ["side_panel_background", "log_box_transparency", "background", "board_theme", "piece_body", "piece_symbols"])
             ],
             "display": [("display", t(settings, "settings_section_display"), ["display_mode", "resolution"])],
             "audio": [("audio", t(settings, "settings_section_audio"), [])],
@@ -1595,6 +1650,25 @@ def run_game():
                             if not row["enabled"]:
                                 continue
                             if row["rect"].collidepoint(mx, my) or row["value_rect"].collidepoint(mx, my):
+                                # Special handling for slider-type row (log box transparency)
+                                if row.get("kind") == "slider" and row.get("key") == "log_box_transparency":
+                                    value_rect = row["value_rect"]
+                                    slider_area = pygame.Rect(value_rect.x + 6, value_rect.y + 8, max(1, value_rect.width - 46), max(1, value_rect.height - 16))
+                                    checkbox_rect = pygame.Rect(value_rect.right - 28, value_rect.centery - 8, 18, 18)
+                                    # Click on checkbox toggles enabling
+                                    if checkbox_rect.collidepoint(mx, my):
+                                        settings.log_box_transparency_enabled = not settings.log_box_transparency_enabled
+                                        save_settings(settings)
+                                    else:
+                                        # Click on slider area sets value (only if enabled)
+                                        if settings.log_box_transparency_enabled and slider_area.collidepoint(mx, my):
+                                            rel = (mx - slider_area.x) / float(max(1, slider_area.width))
+                                            v = int(max(0, min(1.0, rel)) * 255)
+                                            settings.log_box_transparency = v
+                                            save_settings(settings)
+                                    row_clicked = True
+                                    break
+
                                 if row.get("kind") == "modal":
                                     key = row.get("key")
                                     if key == "background":
@@ -2002,15 +2076,8 @@ def run_game():
                     dest_pos = (sx - full_w // 2, sy - full_h // 2)
                     screen.blit(img, dest_pos, area=src_rect)
 
-            mode_text = lang_text["mode_pvp"] if mode == "pvp" else lang_text["mode_ai"]
-            mt_surf = font_text.render(mode_text, True, (0, 0, 0))
-            screen.blit(mt_surf, (panel_x, MARGIN_Y))
-
-            turn_text = lang_text["turn_red"] if current_side == Side.RED else lang_text["turn_black"]
-            tt_surf = font_text.render(turn_text, True, (0, 0, 0))
-            screen.blit(tt_surf, (panel_x, MARGIN_Y + 20))
-
-            y_info = MARGIN_Y + 45
+            # removed mode and turn display per user request
+            y_info = MARGIN_Y + 10
             if in_check_side is not None and not game_over:
                 msg = lang_text["check_on_red"] if in_check_side == Side.RED else lang_text["check_on_black"]
                 ck_surf = font_text.render(msg, True, (200, 0, 0))
@@ -2020,13 +2087,26 @@ def run_game():
             if game_over and winner is not None:
                 if winner == Side.RED:
                     msg = lang_text["red_wins"]
+                    color = (200, 0, 0)
                 elif winner == Side.BLACK:
                     msg = lang_text["black_wins"]
+                    color = (0, 0, 200)
                 else:
                     msg = lang_text["game_over"]
-                win_surf = font_text.render(msg, True, (0, 0, 200))
-                screen.blit(win_surf, (panel_x, y_info))
-                y_info += 25
+                    color = (0, 0, 0)
+
+                # Render the win message centered at the top of the side panel,
+                # bigger, bold and uppercase per request.
+                try:
+                    panel_center_x = panel_rect.centerx
+                except Exception:
+                    panel_center_x = panel_x + LOG_BOX_WIDTH // 2
+
+                win_text = msg.upper()
+                win_surf = font_title.render(win_text, True, color)
+                win_rect = win_surf.get_rect(center=(panel_center_x, MARGIN_Y + 18))
+                screen.blit(win_surf, win_rect)
+                y_info = win_rect.bottom + 8
 
             if match_not_started:
                 pending_surf = font_text.render(lang_text["match_not_started"], True, (60, 60, 60))
@@ -2131,11 +2211,17 @@ def run_game():
 
             # AI controls
             if state == "ai":
+                # Show a centered "Change AI" button before the match starts
                 level_cfg = AI_LEVELS[ai_level_index]
-                btn_ai_level.label = f"AI: {level_cfg['name']}"
-
-                btn_ai_level.rect.topleft = (panel_x + 10, panel_log_top)
-                btn_ai_level.draw(screen, font_button, enabled=match_not_started)
+                btn_ai_level.label = "Change AI"
+                # keep button size, center horizontally in the side panel
+                try:
+                    btn_ai_level.rect.centerx = panel_rect.centerx
+                except Exception:
+                    btn_ai_level.rect.x = panel_x + 30
+                btn_ai_level.rect.y = panel_log_top
+                if match_not_started:
+                    btn_ai_level.draw(screen, font_button, enabled=True)
                 panel_log_top += 35
 
             if match_not_started:
@@ -2154,14 +2240,46 @@ def run_game():
                 enabled_prev = False
                 enabled_next = False
 
-            btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
-            btn_replay_next.draw(screen, font_button, enabled=enabled_next)
+            # Show replay controls only after the match is over
+            if game_over and move_history:
+                btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
+                btn_replay_next.draw(screen, font_button, enabled=enabled_next)
 
-            log_box_rect = pygame.Rect(panel_x, panel_log_top + 30, LOG_BOX_WIDTH, LOG_BOX_HEIGHT)
+            # Make the log box expand vertically up to near the in-game settings button
+            log_top = panel_log_top + 30
+            try:
+                settings_btn_top = btn_in_game_settings.rect.top
+            except Exception:
+                settings_btn_top = WINDOW_HEIGHT - 153
+            desired_bottom = settings_btn_top - 12
+            computed_height = max(80, desired_bottom - log_top)
+            if computed_height <= 0:
+                computed_height = LOG_BOX_HEIGHT
+            log_box_rect = pygame.Rect(panel_x, log_top, LOG_BOX_WIDTH, computed_height)
             log_box_rect_current = log_box_rect
 
-            btn_log_tab_moves.rect = pygame.Rect(log_box_rect.x, log_box_rect.y - 26, 100, 24)
-            btn_log_tab_captured.rect = pygame.Rect(log_box_rect.x + 110, log_box_rect.y - 26, 100, 24)
+            # Make the two tabs sized relative to the log box and centered above it
+            tab_gap = 12
+            tab_height = 24
+            tab_width = max(60, (log_box_rect.width - tab_gap) // 2)
+            total_tabs_w = tab_width * 2 + tab_gap
+            start_x = log_box_rect.x + max(0, (log_box_rect.width - total_tabs_w) // 2)
+            tab_y = log_box_rect.y - 26
+            btn_log_tab_moves.rect = pygame.Rect(start_x, tab_y, tab_width, tab_height)
+            btn_log_tab_captured.rect = pygame.Rect(start_x + tab_width + tab_gap, tab_y, tab_width, tab_height)
+
+            # Position replay buttons centered below the log box and a bit lower
+            try:
+                prev_w, prev_h = btn_replay_prev.rect.size
+            except Exception:
+                prev_w, prev_h = 40, 28
+            gap = 12
+            total_w = prev_w * 2 + gap
+            start_rx = log_box_rect.centerx - total_w // 2
+            # Replay buttons pos
+            replay_y = log_box_rect.bottom - 35
+            btn_replay_prev.rect.topleft = (start_rx, replay_y)
+            btn_replay_next.rect.topleft = (start_rx + prev_w + gap, replay_y)
 
             # Label tabs
             btn_log_tab_moves.label = t(settings, "tab_moves")
@@ -2170,7 +2288,11 @@ def run_game():
             btn_log_tab_moves.draw(screen, font_button, enabled=(log_active_tab == "moves"))
             btn_log_tab_captured.draw(screen, font_button, enabled=(log_active_tab == "captured"))
 
-            pygame.draw.rect(screen, (235, 235, 235), log_box_rect)
+            # Draw log box background with configurable transparency
+            alpha = settings.log_box_transparency if getattr(settings, "log_box_transparency_enabled", True) else 255
+            bg_surf = pygame.Surface((log_box_rect.width, log_box_rect.height), pygame.SRCALPHA)
+            bg_surf.fill((235, 235, 235, int(alpha)))
+            screen.blit(bg_surf, log_box_rect.topleft)
             pygame.draw.rect(screen, (80, 80, 80), log_box_rect, 2)
 
             inner_margin_x = 8
@@ -2211,9 +2333,31 @@ def run_game():
                 y_text = log_box_rect.y + inner_margin_y
                 for i in range(start_idx, end_idx):
                     mv = move_history[i]
-                    text_line = f"{i + 1}. {mv}"
-                    mv_surf = font_text.render(text_line, True, (0, 0, 0))
-                    screen.blit(mv_surf, (log_box_rect.x + inner_margin_x, y_text))
+                    # number
+                    num_text = f"{i + 1}."
+                    side_color = (200, 0, 0) if getattr(mv.piece, "side", None) == Side.RED else (0, 0, 200)
+                    num_surf = font_text.render(num_text, True, side_color)
+                    x = log_box_rect.x + inner_margin_x
+                    screen.blit(num_surf, (x, y_text))
+                    x += num_surf.get_width() + 6
+
+                    # piece name without R-/B- prefix
+                    piece_name = "?"
+                    try:
+                        piece_name = mv.piece.ptype.value.capitalize()
+                    except Exception:
+                        piece_name = str(mv.piece)
+                    piece_surf = font_text.render(piece_name, True, side_color)
+                    screen.blit(piece_surf, (x, y_text))
+                    x += piece_surf.get_width() + 6
+
+                    # from -> to
+                    try:
+                        pos_text = f"{mv.from_pos} -> {mv.to_pos}"
+                    except Exception:
+                        pos_text = ""
+                    pos_surf = font_text.render(pos_text, True, (0, 0, 0))
+                    screen.blit(pos_surf, (x, y_text))
                     y_text += line_height
 
                 if view_index == 0:
@@ -2438,8 +2582,10 @@ def run_game():
             btn_takeback.draw(screen, font_button, enabled=bool(move_history) and not game_over)
             btn_resign.draw(screen, font_button, enabled=not game_over)
             btn_new_game.draw(screen, font_button, enabled=True)
-            btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
-            btn_replay_next.draw(screen, font_button, enabled=enabled_next)
+            # Draw replay buttons only when the match is over
+            if game_over and move_history:
+                btn_replay_prev.draw(screen, font_button, enabled=enabled_prev)
+                btn_replay_next.draw(screen, font_button, enabled=enabled_next)
         # SETTING MENU 
         elif state == "settings":
             settings_panel_rect = get_settings_panel_rect()
@@ -2489,23 +2635,64 @@ def run_game():
                     screen.blit(label_surf, label_rect)
 
                     value_rect = row["value_rect"]
-                    value_color = (230, 230, 230) if row["enabled"] else (150, 150, 150)
-                    pygame.draw.rect(screen, value_color, value_rect, border_radius=6)
-                    pygame.draw.rect(screen, border_color, value_rect, 2, border_radius=6)
+                    # Special rendering for the log box transparency slider + checkbox
+                    if row.get("kind") == "slider" and row.get("key") == "log_box_transparency":
+                        enabled = settings.log_box_transparency_enabled
+                        slider_area = pygame.Rect(value_rect.x + 6, value_rect.y + 8, max(1, value_rect.width - 46), max(1, value_rect.height - 16))
+                        checkbox_rect = pygame.Rect(value_rect.right - 28, value_rect.centery - 8, 18, 18)
 
-                    value_surf = font_button.render(row["value_text"], True, (0, 0, 0))
-                    value_surf_rect = value_surf.get_rect(midleft=(value_rect.x + 10, value_rect.centery))
-                    screen.blit(value_surf, value_surf_rect)
+                        # Slider background
+                        bg_col = (245, 245, 245) if enabled else (180, 180, 180)
+                        pygame.draw.rect(screen, bg_col, slider_area, border_radius=6)
+                        pygame.draw.rect(screen, border_color, slider_area, 2, border_radius=6)
 
-                    arrow_x = value_rect.right - 16
-                    arrow_y = value_rect.centery
-                    if row.get("kind") == "modal":
-                        arrow_pts = [(arrow_x - 6, arrow_y - 6), (arrow_x + 6, arrow_y), (arrow_x - 6, arrow_y + 6)]
-                    elif settings_open_dropdown == row["key"]:
-                        arrow_pts = [(arrow_x - 6, arrow_y + 3), (arrow_x + 6, arrow_y + 3), (arrow_x, arrow_y - 5)]
+                        # Filled portion
+                        fill_w = int((settings.log_box_transparency / 255.0) * slider_area.width)
+                        fill_rect = pygame.Rect(slider_area.x, slider_area.y, fill_w, slider_area.height)
+                        fill_col = (0, 110, 200) if enabled else (120, 120, 120)
+                        pygame.draw.rect(screen, fill_col, fill_rect, border_radius=6)
+
+                        # Knob
+                        knob_x = slider_area.x + max(4, min(slider_area.width - 4, fill_w))
+                        knob_center = (knob_x, slider_area.centery)
+                        knob_color = (255, 255, 255) if enabled else (220, 220, 220)
+                        pygame.draw.circle(screen, knob_color, knob_center, 7)
+                        pygame.draw.circle(screen, border_color, knob_center, 7, 2)
+
+                        # Percentage text
+                        pct = int(settings.log_box_transparency / 255.0 * 100)
+                        pct_surf = font_button.render(f"{pct}%", True, (0, 0, 0) if enabled else (90, 90, 90))
+                        pct_rect = pct_surf.get_rect(midleft=(slider_area.right + 6, slider_area.centery))
+                        screen.blit(pct_surf, pct_rect)
+
+                        # Checkbox to enable/disable
+                        pygame.draw.rect(screen, (255, 255, 255), checkbox_rect, border_radius=4)
+                        pygame.draw.rect(screen, border_color, checkbox_rect, 2, border_radius=4)
+                        if enabled:
+                            # draw check mark
+                            cx = checkbox_rect.centerx
+                            cy = checkbox_rect.centery
+                            pygame.draw.line(screen, (20, 120, 20), (checkbox_rect.left + 4, cy), (cx - 1, checkbox_rect.bottom - 5), 3)
+                            pygame.draw.line(screen, (20, 120, 20), (cx - 1, checkbox_rect.bottom - 5), (checkbox_rect.right - 4, checkbox_rect.top + 4), 3)
+
                     else:
-                        arrow_pts = [(arrow_x - 6, arrow_y - 3), (arrow_x + 6, arrow_y - 3), (arrow_x, arrow_y + 5)]
-                    pygame.draw.polygon(screen, (0, 0, 0), arrow_pts)
+                        value_color = (230, 230, 230) if row["enabled"] else (150, 150, 150)
+                        pygame.draw.rect(screen, value_color, value_rect, border_radius=6)
+                        pygame.draw.rect(screen, border_color, value_rect, 2, border_radius=6)
+
+                        value_surf = font_button.render(row["value_text"], True, (0, 0, 0))
+                        value_surf_rect = value_surf.get_rect(midleft=(value_rect.x + 10, value_rect.centery))
+                        screen.blit(value_surf, value_surf_rect)
+
+                        arrow_x = value_rect.right - 16
+                        arrow_y = value_rect.centery
+                        if row.get("kind") == "modal":
+                            arrow_pts = [(arrow_x - 6, arrow_y - 6), (arrow_x + 6, arrow_y), (arrow_x - 6, arrow_y + 6)]
+                        elif settings_open_dropdown == row["key"]:
+                            arrow_pts = [(arrow_x - 6, arrow_y + 3), (arrow_x + 6, arrow_y + 3), (arrow_x, arrow_y - 5)]
+                        else:
+                            arrow_pts = [(arrow_x - 6, arrow_y - 3), (arrow_x + 6, arrow_y - 3), (arrow_x, arrow_y + 5)]
+                        pygame.draw.polygon(screen, (0, 0, 0), arrow_pts)
 
                 for opt in layout["options"]:
                     bg = (225, 225, 225)
