@@ -7,6 +7,7 @@ class Button:
         self.rect = rect
         self.label = label
         self.style = style or {}
+        self.hovered = False
 
     def _create_vertical_gradient(self, size, top_color, bottom_color):
         width, height = size
@@ -135,8 +136,28 @@ class Button:
         surface.blit(circle_surface, rect.topleft)
 
     def draw(self, surface, font, enabled: bool = True):
+        # If hovered, we may apply a subtle overlay/highlight. The caller
+        # should update `self.hovered` each frame based on mouse position.
         if self.style.get("variant") == "gradient":
-            self._draw_gradient(surface, font, enabled)
+            # Slightly brighten gradient when hovered
+            if self.hovered:
+                # Temporarily tweak colors in style without mutating original
+                s = dict(self.style)
+                ce = s.get("colors_enabled")
+                if ce and isinstance(ce, tuple) and len(ce) >= 2:
+                    def brighten(c, amount=14):
+                        return tuple(min(255, max(0, x + amount)) for x in c)
+
+                    s["colors_enabled"] = (brighten(ce[0]), brighten(ce[1]))
+                # use _draw_gradient with modified style by temporarily swapping
+                old_style = self.style
+                try:
+                    self.style = s
+                    self._draw_gradient(surface, font, enabled)
+                finally:
+                    self.style = old_style
+            else:
+                self._draw_gradient(surface, font, enabled)
             return
         if self.style.get("variant") == "image_circle":
             self._draw_image_circle(surface, font, enabled)
@@ -146,6 +167,16 @@ class Button:
         border = (80, 80, 80)
         pygame.draw.rect(surface, bg, self.rect, border_radius=6)
         pygame.draw.rect(surface, border, self.rect, 2, border_radius=6)
+        if self.hovered:
+            try:
+                overlay = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+                overlay.fill((255, 255, 255, 28))
+                surface.blit(overlay, self.rect.topleft)
+                # also draw a subtle outer glow
+                glow_color = self.style.get("hover_glow_color", (255, 255, 255))
+                pygame.draw.rect(surface, glow_color, self.rect.inflate(6, 6), 2, border_radius=8)
+            except Exception:
+                pass
         text_color = (0, 0, 0)
         # Render label; support temporary bold toggling via style['bold']
         style = self.style

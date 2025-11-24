@@ -103,6 +103,29 @@ def run_game():
         window_flags = pygame.RESIZABLE | pygame.DOUBLEBUF
         window_mode_size = lock_size_to_ratio(*window_mode_size)
         window_surface = pygame.display.set_mode(window_mode_size, window_flags)
+
+    # Attempt to set a window icon if an icon file is provided.
+    # Prefer a top-level `icon.ico` in the project root, fall back to bundled assets.
+    try:
+        icon_candidates = [
+            os.path.join(os.getcwd(), "icon.ico"),
+            os.path.join(os.getcwd(), "icon.png"),
+            os.path.join(os.path.dirname(__file__), "..", "..", "assets", "icons", "icon.png"),
+            os.path.join(ASSETS_DIR, "icons", "icon.png"),
+        ]
+        for p in icon_candidates:
+            p = os.path.normpath(p)
+            if os.path.exists(p):
+                try:
+                    icon_surf = pygame.image.load(p)
+                    pygame.display.set_icon(icon_surf)
+                    break
+                except Exception:
+                    # ignore and try the next candidate
+                    continue
+    except Exception:
+        pass
+
     pygame.display.set_caption("Xiangqi - Cờ Tướng")
 
     screen = pygame.Surface((base_width, base_height), pygame.SRCALPHA).convert_alpha()
@@ -211,10 +234,10 @@ def run_game():
     font_timer = load_font_for_language(lang_code, 24, fallback_name="Consolas")
 
     TIMER_CHOICES = [
-        {"label": "1:00", "seconds": 60, "asset": os.path.join("avatars", "ai_soldier.jpg")},
-        {"label": "5:00", "seconds": 300, "asset": os.path.join("avatars", "ai_casual.jpg")},
-        {"label": "10:00", "seconds": 600, "asset": os.path.join("avatars", "ai_general.jpg")},
-        {"label": "∞", "seconds": None, "asset": os.path.join("boards", "classic.png")},
+        {"label": "1:00", "seconds": 60, "asset": os.path.join("components", "1m.jpg")},
+        {"label": "5:00", "seconds": 300, "asset": os.path.join("components", "5m.jpg")},
+        {"label": "10:00", "seconds": 600, "asset": os.path.join("components", "10m.jpg")},
+        {"label": "∞", "seconds": None, "asset": os.path.join("components", "infinite.jpg")},
     ]
 
     board = Board()
@@ -291,6 +314,43 @@ def run_game():
     SIDE_PANEL_SCALED_CACHE = {}
     SIDE_PANEL_THUMB_CACHE = {}
     side_panel_modal_open = False
+
+    # Flags assets
+    FLAGS_DIR = os.path.join(ASSETS_DIR, "menu", "flags")
+    FLAG_CACHE = {}
+    LANG_FLAG_FILES = {
+        "vi": "vietnam.jpg",
+        "en": "usuk.jpg",
+        "ja": "japan.jpg",
+        "hk": "hongkong.jpg",
+        "tw": "taiwan.jpg",
+        "ko": "korea.jpg",
+    }
+
+    def load_flag_for_language(lang_code: str, size):
+        """Load and cache a flag image for a language code scaled to `size`.
+        `size` is a (w, h) tuple. Returns a pygame.Surface or None."""
+        try:
+            key = _normalize_lang(lang_code)
+        except Exception:
+            key = (lang_code or "").lower()
+        fname = LANG_FLAG_FILES.get(key)
+        if not fname:
+            return None
+        cache_key = (fname, size)
+        if cache_key in FLAG_CACHE:
+            return FLAG_CACHE[cache_key]
+        full_path = os.path.join(FLAGS_DIR, fname)
+        surf = None
+        if os.path.exists(full_path):
+            try:
+                img = pygame.image.load(full_path)
+                img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
+                surf = pygame.transform.smoothscale(img, size)
+            except Exception:
+                surf = None
+        FLAG_CACHE[cache_key] = surf
+        return surf
 
     panel_x = MARGIN_X + BOARD_COLS * CELL_SIZE + 20
     board_right = MARGIN_X + (BOARD_COLS - 1) * CELL_SIZE
@@ -465,6 +525,36 @@ def run_game():
     settings_center_x = WINDOW_WIDTH // 2
     settings_open_dropdown = None
     btn_settings_back = Button(pygame.Rect(settings_center_x - 110, WINDOW_HEIGHT - 65, 220, 36))
+
+    # Central list of buttons used for hover handling
+    try:
+        all_buttons = [
+            btn_in_game_settings,
+            btn_takeback,
+            btn_resign,
+            btn_new_game,
+            btn_ai_level,
+            btn_start_match,
+            btn_replay_prev,
+            btn_replay_next,
+            btn_change_side,
+            btn_menu_pvp,
+            btn_menu_ai,
+            btn_menu_stats,
+            btn_menu_settings,
+            btn_menu_credits,
+            btn_menu_exit,
+            btn_credits_back,
+            btn_log_tab_moves,
+            btn_log_tab_captured,
+            btn_pause_resume,
+            btn_pause_settings,
+            btn_pause_player_stats,
+            btn_pause_to_menu,
+            btn_settings_back,
+        ]
+    except Exception:
+        all_buttons = []
 
     def apply_display_mode():
         nonlocal window_surface, window_mode_size, window_flags
@@ -1240,12 +1330,27 @@ def run_game():
 
     def update_hover_preview(mx, my, inside):
         nonlocal hovered_move
+        # Update button hovered states regardless of game state so menus
+        # and pause panels receive hover feedback.
+        try:
+            for b in all_buttons:
+                try:
+                    b.hovered = b.rect.collidepoint(mx, my) if inside else False
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         if not inside:
             hovered_move = None
             return
+
+        # Hover preview for piece moves only active during gameplay when
+        # not paused and not game over.
         if state not in ("pvp", "ai") or paused or game_over:
             hovered_move = None
             return
+
         if selected is None or not valid_moves:
             hovered_move = None
             return
@@ -1615,24 +1720,27 @@ def run_game():
                 if not inside_game:
                     continue
 
-                # Scroll move log with wheel
-                if btn in (4, 5) and state in ("pvp", "ai") and log_active_tab == "moves" and log_box_rect_current is not None:
+                # Scroll log with wheel: moves or captured tab
+                if btn in (4, 5) and state in ("pvp", "ai") and log_box_rect_current is not None:
                     if log_box_rect_current.collidepoint(mx, my):
-                        try:
-                            vi = replay_index if replay_index is not None else len(move_history)
-                        except NameError:
-                            vi = len(move_history)
+                        # moves tab scroll
+                        if log_active_tab == "moves":
+                            try:
+                                vi = replay_index if replay_index is not None else len(move_history)
+                            except NameError:
+                                vi = len(move_history)
 
-                        box_lines = max(1, log_box_rect_current.height // 20)
-                        max_offset = max(0, vi - box_lines)
+                            box_lines = max(1, log_box_rect_current.height // 20)
+                            max_offset = max(0, vi - box_lines)
 
-                        if btn == 4:  # scroll up
-                            log_follow_latest = False
-                            move_log_offset = max(0, move_log_offset - 1)
-                            
-                        elif btn == 5:  # scroll down
-                            log_follow_latest = False
-                            move_log_offset = min(max_offset, move_log_offset + 1)
+                            if btn == 4:  # scroll up
+                                log_follow_latest = False
+                                move_log_offset = max(0, move_log_offset - 1)
+                            elif btn == 5:  # scroll down
+                                log_follow_latest = False
+                                move_log_offset = min(max_offset, move_log_offset + 1)
+
+                        # do not scroll captured tab; icons will be auto-scaled to fit
                     continue
 
                 if state in ("pvp", "ai"):
@@ -2508,9 +2616,9 @@ def run_game():
                     screen.blit(et_surf, et_rect)
 
             else:
-                # Tab Captured: thống kê quân bị ăn, dùng PNG icon + số lượng
-                captured_by_red_counts = {} # RED ăn được quân của BLACK
-                captured_by_black_counts = {} # BLACK ăn được quân của RED
+                # Tab Captured: show captured pieces in two vertical columns
+                captured_by_red_counts = {}  # RED captured pieces (i.e. RED captured BLACK)
+                captured_by_black_counts = {}  # BLACK captured pieces (i.e. BLACK captured RED)
 
                 for mv in move_history[:view_index]:
                     if mv.captured is not None:
@@ -2520,13 +2628,6 @@ def run_game():
                             captured_by_red_counts[pt] = captured_by_red_counts.get(pt, 0) + 1
                         else:
                             captured_by_black_counts[pt] = captured_by_black_counts.get(pt, 0) + 1
-
-                if settings.language == "en":
-                    red_label = "RED captured:"
-                    black_label = "BLACK captured:"
-                else:
-                    red_label = "ĐỎ ăn được:"
-                    black_label = "ĐEN ăn được:"
 
                 piece_order = [
                     PieceType.GENERAL,
@@ -2538,115 +2639,76 @@ def run_game():
                     PieceType.SOLDIER,
                 ]
 
-                small_size = 26
-
                 class _DummyPiece:
                     def __init__(self, side, ptype):
                         self.side = side
                         self.ptype = ptype
 
-                def piece_label_text(ptype):
-                    if settings.language == "en":
-                        names = {
-                            PieceType.GENERAL: "Gen",
-                            PieceType.ROOK: "Rook",
-                            PieceType.CANNON: "Cannon",
-                            PieceType.HORSE: "Horse",
-                            PieceType.ELEPHANT: "Elephant",
-                            PieceType.ADVISOR: "Advisor",
-                            PieceType.SOLDIER: "Soldier",
-                        }
-                    else:
-                        names = {
-                            PieceType.GENERAL: "Tướng",
-                            PieceType.ROOK: "Xe",
-                            PieceType.CANNON: "Pháo",
-                            PieceType.HORSE: "Mã",
-                            PieceType.ELEPHANT: "Tượng",
-                            PieceType.ADVISOR: "Sĩ",
-                            PieceType.SOLDIER: "Tốt",
-                        }
-                    return names.get(ptype, "?")
+                # Larger icons for captured pieces
+                captured_icon_size = 48
+                gap_y = 8
 
-                y_text = log_box_rect.y + inner_margin_y
+                # Column positions: left for RED's captured (icons of BLACK pieces), right for BLACK's captured
+                left_x = log_box_rect.x + inner_margin_x
+                right_x = log_box_rect.x + log_box_rect.width - inner_margin_x - captured_icon_size - 28
 
-                # RED captured
-                red_surf = font_text.render(red_label, True, (160, 0, 0))
-                screen.blit(red_surf, (log_box_rect.x + inner_margin_x, y_text))
-                y_text += line_height
+                y_start = log_box_rect.y + inner_margin_y
 
-                x_icon = log_box_rect.x + inner_margin_x
-                max_x = log_box_rect.x + log_box_rect.width - inner_margin_x
+                # Compute how many rows (visible types) there are and auto-scale icons to fit
+                available_height = log_box_rect.height - (inner_margin_y * 2)
+                visible_types = [pt for pt in piece_order if (captured_by_red_counts.get(pt, 0) > 0 or captured_by_black_counts.get(pt, 0) > 0)]
+                total_visible = len(visible_types)
 
-                for pt in piece_order:
-                    count = captured_by_red_counts.get(pt, 0)
-                    if count <= 0:
-                        continue
-
-                    dummy_piece = _DummyPiece(Side.BLACK, pt)  # RED cap BLACK
-                    icon = get_piece_sprite(dummy_piece, settings, small_size)
-                    if icon is None:
-                        icon_text = piece_label_text(pt)
-                        icon = font_text.render(icon_text, True, (0, 0, 0))
-                    icon_rect = icon.get_rect(topleft=(x_icon, y_text))
-                    if icon_rect.right > max_x:
-                        x_icon = log_box_rect.x + inner_margin_x
-                        y_text += line_height
-                        icon_rect.topleft = (x_icon, y_text)
-                    screen.blit(icon, icon_rect.topleft)
-                    x_icon = icon_rect.right + 4
-
-                    cnt_txt = f"x{count}"
-                    cnt_surf = font_text.render(cnt_txt, True, (0, 0, 0))
-                    cnt_rect = cnt_surf.get_rect(midleft=(x_icon, y_text + icon_rect.height / 2 - 2))
-                    if cnt_rect.right > max_x:
-                        x_icon = log_box_rect.x + inner_margin_x
-                        y_text += line_height
-                        cnt_rect.midleft = (x_icon, y_text + icon_rect.height / 2 - 2)
-                    screen.blit(cnt_surf, cnt_rect.topleft)
-                    x_icon = cnt_rect.right + 8
-
-                y_text += line_height + 6
-
-                # BLACK captured
-                black_surf = font_text.render(black_label, True, (0, 0, 160))
-                screen.blit(black_surf, (log_box_rect.x + inner_margin_x, y_text))
-                y_text += line_height
-
-                x_icon = log_box_rect.x + inner_margin_x
-                for pt in piece_order:
-                    count = captured_by_black_counts.get(pt, 0)
-                    if count <= 0:
-                        continue
-
-                    dummy_piece = _DummyPiece(Side.RED, pt)  # BLACK cap RED
-                    icon = get_piece_sprite(dummy_piece, settings, small_size)
-                    if icon is None:
-                        icon_text = piece_label_text(pt)
-                        icon = font_text.render(icon_text, True, (0, 0, 0))
-                    icon_rect = icon.get_rect(topleft=(x_icon, y_text))
-                    if icon_rect.right > max_x:
-                        x_icon = log_box_rect.x + inner_margin_x
-                        y_text += line_height
-                        icon_rect.topleft = (x_icon, y_text)
-                    screen.blit(icon, icon_rect.topleft)
-                    x_icon = icon_rect.right + 4
-
-                    cnt_txt = f"x{count}"
-                    cnt_surf = font_text.render(cnt_txt, True, (0, 0, 0))
-                    cnt_rect = cnt_surf.get_rect(midleft=(x_icon, y_text + icon_rect.height / 2 - 2))
-                    if cnt_rect.right > max_x:
-                        x_icon = log_box_rect.x + inner_margin_x
-                        y_text += line_height
-                        cnt_rect.midleft = (x_icon, y_text + icon_rect.height / 2 - 2)
-                    screen.blit(cnt_surf, cnt_rect.topleft)
-                    x_icon = cnt_rect.right + 8
-
-                if not captured_by_red_counts and not captured_by_black_counts:
+                if total_visible == 0:
                     empty_txt = "(no captured pieces)" if settings.language == "en" else "(chưa ăn được quân nào)"
                     et_surf = font_text.render(empty_txt, True, (120, 120, 120))
                     et_rect = et_surf.get_rect(center=log_box_rect.center)
                     screen.blit(et_surf, et_rect)
+                else:
+                    # Compute a dynamic icon size so all visible rows fit vertically
+                    min_icon = 20
+                    max_icon = 48
+                    # space for gaps between rows
+                    total_gap = gap_y * (total_visible - 1)
+                    tentative_icon = max(min_icon, (available_height - total_gap) // total_visible)
+                    icon_size = max(min_icon, min(max_icon, tentative_icon))
+
+                    # Recompute column x positions based on icon_size
+                    left_x = log_box_rect.x + inner_margin_x
+                    right_x = log_box_rect.x + log_box_rect.width - inner_margin_x - icon_size - 28
+
+                    row_height = icon_size + gap_y
+                    y = y_start
+                    for pt in visible_types:
+                        # Left column: pieces RED captured (icons of BLACK pieces)
+                        left_count = captured_by_red_counts.get(pt, 0)
+                        if left_count > 0:
+                            dummy_piece = _DummyPiece(Side.BLACK, pt)
+                            icon = get_piece_sprite(dummy_piece, settings, icon_size)
+                            if icon is None:
+                                icon = font_text.render("?", True, (0, 0, 0))
+                            icon_rect = icon.get_rect(topleft=(left_x, y))
+                            screen.blit(icon, icon_rect.topleft)
+                            cnt_txt = f"x{left_count}"
+                            cnt_surf = font_text.render(cnt_txt, True, (0, 0, 0))
+                            cnt_rect = cnt_surf.get_rect(midleft=(left_x + icon_rect.width + 8, y + icon_rect.height / 2 - 2))
+                            screen.blit(cnt_surf, cnt_rect.topleft)
+
+                        # Right column: pieces BLACK captured (icons of RED pieces)
+                        right_count = captured_by_black_counts.get(pt, 0)
+                        if right_count > 0:
+                            dummy_piece = _DummyPiece(Side.RED, pt)
+                            icon = get_piece_sprite(dummy_piece, settings, icon_size)
+                            if icon is None:
+                                icon = font_text.render("?", True, (0, 0, 0))
+                            icon_rect = icon.get_rect(topleft=(right_x, y))
+                            screen.blit(icon, icon_rect.topleft)
+                            cnt_txt = f"x{right_count}"
+                            cnt_surf = font_text.render(cnt_txt, True, (0, 0, 0))
+                            cnt_rect = cnt_surf.get_rect(midleft=(right_x + icon_rect.width + 8, y + icon_rect.height / 2 - 2))
+                            screen.blit(cnt_surf, cnt_rect.topleft)
+
+                        y += row_height
 
                 def piece_char_for_display(ptype, side):
                     if ptype == PieceType.GENERAL:
@@ -2664,54 +2726,8 @@ def run_game():
                     else:
                         return "兵" if side == Side.RED else "卒"
 
-                if settings.language == "en":
-                    red_label = "RED captured:"
-                    black_label = "BLACK captured:"
-                else:
-                    red_label = "ĐỎ ăn được:"
-                    black_label = "ĐEN ăn được:"
-
-                y_text = log_box_rect.y + inner_margin_y
-                red_surf = font_text.render(red_label, True, (160, 0, 0))
-                screen.blit(red_surf, (log_box_rect.x + inner_margin_x, y_text))
-                y_text += line_height
-
-                x_icon = log_box_rect.x + inner_margin_x
-                max_x = log_box_rect.x + log_box_rect.width - inner_margin_x
-
-                for p in captured_by_red_counts:
-                    ch = piece_char_for_display(p, Side.BLACK)
-                    icon_surf = font_text.render(ch, True, (0, 0, 0))
-                    ir = icon_surf.get_rect(topleft=(x_icon, y_text))
-                    if ir.right > max_x:
-                        x_icon = log_box_rect.x + inner_margin_x
-                        y_text += line_height
-                        ir.topleft = (x_icon, y_text)
-                    screen.blit(icon_surf, ir.topleft)
-                    x_icon = ir.right + 5
-
-                y_text += line_height + 5
-                black_surf = font_text.render(black_label, True, (0, 0, 160))
-                screen.blit(black_surf, (log_box_rect.x + inner_margin_x, y_text))
-                y_text += line_height
-
-                x_icon = log_box_rect.x + inner_margin_x
-                for p in captured_by_black_counts:
-                    ch = piece_char_for_display(p, Side.RED)
-                    icon_surf = font_text.render(ch, True, (0, 0, 0))
-                    ir = icon_surf.get_rect(topleft=(x_icon, y_text))
-                    if ir.right > max_x:
-                        x_icon = log_box_rect.x + inner_margin_x
-                        y_text += line_height
-                        ir.topleft = (x_icon, y_text)
-                    screen.blit(icon_surf, ir.topleft)
-                    x_icon = ir.right + 5
-
-                if not captured_by_red_counts and not captured_by_black_counts:
-                    empty_txt = "(no captured pieces)" if settings.language == "en" else "(chưa ăn được quân nào)"
-                    et_surf = font_text.render(empty_txt, True, (120, 120, 120))
-                    et_rect = et_surf.get_rect(center=log_box_rect.center)
-                    screen.blit(et_surf, et_rect)
+                # Duplicate character-based rendering removed; icons and counts are
+                # already drawn above in two vertical columns without text labels.
 
 
             btn_in_game_settings.label = lang_text["btn_settings_in_game"]
@@ -2821,8 +2837,21 @@ def run_game():
                         pygame.draw.rect(screen, value_color, value_rect, border_radius=6)
                         pygame.draw.rect(screen, border_color, value_rect, 2, border_radius=6)
 
+                        # Draw flag icon for language row, if available
+                        text_x = value_rect.x + 10
+                        if row.get("key") == "language":
+                            # choose a sensible flag size based on row height
+                            fh = max(12, value_rect.height - 12)
+                            fw = int(round(fh * 1.6))
+                            flag_surf = load_flag_for_language(row.get("value"), (fw, fh))
+                            if flag_surf:
+                                flag_rect = flag_surf.get_rect()
+                                flag_rect.midleft = (value_rect.x + 8 + flag_rect.width // 2, value_rect.centery)
+                                screen.blit(flag_surf, (value_rect.x + 8, value_rect.centery - flag_rect.height // 2))
+                                text_x = value_rect.x + 8 + flag_rect.width + 8
+
                         value_surf = font_button.render(row["value_text"], True, (0, 0, 0))
-                        value_surf_rect = value_surf.get_rect(midleft=(value_rect.x + 10, value_rect.centery))
+                        value_surf_rect = value_surf.get_rect(midleft=(text_x, value_rect.centery))
                         screen.blit(value_surf, value_surf_rect)
 
                         arrow_x = value_rect.right - 16
@@ -2841,8 +2870,18 @@ def run_game():
                         bg = (200, 220, 255)
                     pygame.draw.rect(screen, bg, opt["rect"], border_radius=6)
                     pygame.draw.rect(screen, (60, 60, 60), opt["rect"], 1, border_radius=6)
+                    # Draw flag for language options when available
+                    opt_text_x = opt["rect"].x + 10
+                    if opt.get("key") == "language":
+                        ofh = max(12, opt["rect"].height - 8)
+                        ofw = int(round(ofh * 1.6))
+                        opt_flag = load_flag_for_language(opt.get("value"), (ofw, ofh))
+                        if opt_flag:
+                            screen.blit(opt_flag, (opt["rect"].x + 6, opt["rect"].centery - opt_flag.get_height() // 2))
+                            opt_text_x = opt["rect"].x + 6 + opt_flag.get_width() + 8
+
                     opt_surf = font_button.render(opt["text"], True, (0, 0, 0))
-                    opt_rect = opt_surf.get_rect(midleft=(opt["rect"].x + 10, opt["rect"].centery))
+                    opt_rect = opt_surf.get_rect(midleft=(opt_text_x, opt["rect"].centery))
                     screen.blit(opt_surf, opt_rect)
 
                 dropdown_bottom = layout["content_bottom"]
