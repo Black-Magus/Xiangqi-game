@@ -63,7 +63,26 @@ class Button:
 
         pygame.draw.rect(surface, border_color, rect, 2, border_radius=border_radius)
 
+        # Render label; support temporary bold toggling via style['bold']
+        bold = style.get("bold", False)
+        prev_bold = False
+        if hasattr(font, "get_bold"):
+            try:
+                prev_bold = font.get_bold()
+            except Exception:
+                prev_bold = False
+        if bold and hasattr(font, "set_bold"):
+            try:
+                font.set_bold(True)
+            except Exception:
+                pass
         text_surf = font.render(self.label, True, text_color)
+        # restore bold state
+        if hasattr(font, "set_bold"):
+            try:
+                font.set_bold(prev_bold)
+            except Exception:
+                pass
         text_rect = text_surf.get_rect(center=self.rect.center)
         surface.blit(text_surf, text_rect)
 
@@ -128,7 +147,26 @@ class Button:
         pygame.draw.rect(surface, bg, self.rect, border_radius=6)
         pygame.draw.rect(surface, border, self.rect, 2, border_radius=6)
         text_color = (0, 0, 0)
+        # Render label; support temporary bold toggling via style['bold']
+        style = self.style
+        bold = style.get("bold", False)
+        prev_bold = False
+        if hasattr(font, "get_bold"):
+            try:
+                prev_bold = font.get_bold()
+            except Exception:
+                prev_bold = False
+        if bold and hasattr(font, "set_bold"):
+            try:
+                font.set_bold(True)
+            except Exception:
+                pass
         text_surf = font.render(self.label, True, text_color)
+        if hasattr(font, "set_bold"):
+            try:
+                font.set_bold(prev_bold)
+            except Exception:
+                pass
         text_rect = text_surf.get_rect(center=self.rect.center)
         surface.blit(text_surf, text_rect)
 

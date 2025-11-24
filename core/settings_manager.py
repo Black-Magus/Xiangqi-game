@@ -3,7 +3,7 @@ import os
 from typing import Dict, Any
 
 from data.themes import BOARD_THEMES
-from data.localisation import PIECE_BODY_THEMES, PIECE_SYMBOL_SETS
+from data.localisation import PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, FONT_BY_LANGUAGE
 from data.backgrounds import BACKGROUNDS
 
 
@@ -64,8 +64,30 @@ def load_settings() -> Settings:
             s.board_theme_index = int(data["board_theme_index"]) % len(BOARD_THEMES)
         if data.get("display_mode") in ("window", "window_fullscreen", "fullscreen"):
             s.display_mode = data["display_mode"]
-        if data.get("language") in ("vi", "en"):
-            s.language = data["language"]
+        # Accept any supported language codes from FONT_BY_LANGUAGE and
+        # normalize common variants (eg. zh_HK, zh-TW) to our keys.
+        lang_val = data.get("language")
+        if isinstance(lang_val, str):
+            lv = lang_val.replace('-', '_').lower()
+            chosen = None
+            if lv in FONT_BY_LANGUAGE:
+                chosen = lv
+            elif lv.startswith("zh"):
+                if "hk" in lv or "hant_hk" in lv:
+                    chosen = "hk"
+                elif "tw" in lv or "hant" in lv:
+                    chosen = "tw"
+            elif lv.startswith("ja"):
+                chosen = "ja"
+            elif lv.startswith("ko"):
+                chosen = "ko"
+            elif lv.startswith("vi"):
+                chosen = "vi"
+            elif lv.startswith("en"):
+                chosen = "en"
+
+            if chosen and chosen in FONT_BY_LANGUAGE:
+                s.language = chosen
         if "piece_body_theme_index" in data and PIECE_BODY_THEMES:
             s.piece_body_theme_index = int(data["piece_body_theme_index"]) % len(PIECE_BODY_THEMES)
         if "piece_symbol_set_index" in data and PIECE_SYMBOL_SETS:

@@ -70,6 +70,36 @@ def _grayscale_surface(src):
     return gray
 
 
+def _surface_has_color(surf, sample_steps=8):
+    """Return True if the surface contains any non-grayscale colored pixel.
+
+    The function samples the surface at a coarse grid (controlled by
+    `sample_steps`) to avoid expensive per-pixel scans for large images.
+    Fully transparent pixels are ignored.
+    """
+    try:
+        w, h = surf.get_size()
+    except Exception:
+        return False
+    if w == 0 or h == 0:
+        return False
+
+    step_x = max(1, w // sample_steps)
+    step_y = max(1, h // sample_steps)
+
+    for y in range(0, h, step_y):
+        for x in range(0, w, step_x):
+            px = surf.get_at((x, y))
+            # px is (r,g,b,a) for surfaces with alpha
+            if len(px) >= 4 and px[3] == 0:
+                # ignore fully transparent pixels
+                continue
+            r, g, b = px[0], px[1], px[2]
+            if r != g or r != b:
+                return True
+    return False
+
+
 def load_avatar_image(path: str, size: int, grayscale: bool = False):
     if not path:
         return None
@@ -164,6 +194,8 @@ def load_piece_body_image(theme_index, side, size):
     if not filename:
         return None
     folder = theme.get("folder")
+    # Build candidate path. If the expected filename doesn't exist, fall back
+    # to common defaults used in the assets tree (e.g. 'red.png' / 'black.png')
     if folder:
         path = os.path.join(PIECE_BODIES_DIR, folder, filename)
     else:
@@ -172,7 +204,30 @@ def load_piece_body_image(theme_index, side, size):
     if key in _piece_body_cache:
         return _piece_body_cache[key]
     if not os.path.exists(path):
-        return None
+        # Fallbacks: try standard names inside the folder (red.png / black.png)
+        fallback_name = "red.png" if side == Side.RED else "black.png"
+        if folder:
+            alt_path = os.path.join(PIECE_BODIES_DIR, folder, fallback_name)
+        else:
+            alt_path = os.path.join(PIECE_BODIES_DIR, fallback_name)
+        if os.path.exists(alt_path):
+            path = alt_path
+        else:
+            # Try any file in the folder that contains 'red' or 'black' in name
+            if folder:
+                try:
+                    for fn in os.listdir(os.path.join(PIECE_BODIES_DIR, folder)):
+                        low = fn.lower()
+                        if (side == Side.RED and "red" in low) or (side != Side.RED and "black" in low):
+                            candidate = os.path.join(PIECE_BODIES_DIR, folder, fn)
+                            if os.path.exists(candidate):
+                                path = candidate
+                                break
+                except Exception:
+                    pass
+            # If still not found, give up
+            if not os.path.exists(path):
+                return None
     try:
         img = pygame.image.load(path).convert_alpha()
     except Exception:
@@ -240,9 +295,16 @@ def get_piece_sprite(piece, settings: Settings, size: int):
     if body_img is None or symbol_img is None:
         return None
 
-    # Colourize symbol
+    # Colourize symbol only when the symbol image is monochrome. If the
+    # symbol PNG already contains colors, preserve the original color.
     symbol_colored = symbol_img.copy()
-    symbol_colored.fill((*color, 255), special_flags=pygame.BLEND_RGBA_MULT)
+    try:
+        if not _surface_has_color(symbol_colored):
+            symbol_colored.fill((*color, 255), special_flags=pygame.BLEND_RGBA_MULT)
+    except Exception:
+        # On any failure, fall back to attempting to colourize — this keeps
+        # behavior compatible with older themes.
+        symbol_colored.fill((*color, 255), special_flags=pygame.BLEND_RGBA_MULT)
 
     surf = pygame.Surface((size, size), pygame.SRCALPHA)
     surf.blit(body_img, (0, 0))

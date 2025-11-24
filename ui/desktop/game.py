@@ -15,7 +15,7 @@ from config import (
 from core.engine.board import Board
 from core.engine.types import Side, Move, PieceType
 
-from data.localisation import TEXT, PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, t
+from data.localisation import TEXT, PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, t, FONT_BY_LANGUAGE
 from data.themes import BOARD_THEMES
 from data.backgrounds import BACKGROUNDS
 from data.side_panel_backgrounds import SIDE_PANEL_BACKGROUNDS
@@ -133,12 +133,82 @@ def run_game():
     recompute_render_scale()
 
     clock = pygame.time.Clock()
-    font_piece = pygame.font.SysFont("SimHei", 28)
-    font_text = pygame.font.SysFont("Consolas", 18)
-    font_button = pygame.font.SysFont("Consolas", 16)
-    font_title = pygame.font.SysFont("SimHei", 40, bold=False)
-    font_avatar = pygame.font.SysFont("Consolas", 16, bold=True)
-    font_timer = pygame.font.SysFont("Consolas", 24, bold=True)
+    def _normalize_lang(code: str) -> str:
+        if not code:
+            return "en"
+        c = code.replace('-', '_').lower()
+        # common Chinese variants
+        if c.startswith("zh"):
+            if "hk" in c or "hant_hk" in c:
+                return "hk"
+            if "tw" in c or "hant" in c:
+                return "tw"
+            # default to traditional (tw) if explicitly traditional requested
+            return "tw" if "traditional" in c or "hant" in c else "en"
+        # direct mappings
+        if c.startswith("ja"):
+            return "ja"
+        if c.startswith("ko"):
+            return "ko"
+        if c.startswith("vi"):
+            return "vi"
+        if c.startswith("en"):
+            return "en"
+        # fallback to provided code if matches mapping keys
+        return c
+
+    def load_font_for_language(lang_code: str, size: int, fallback_name: str = "Consolas"):
+        try:
+            key = _normalize_lang(lang_code)
+            mapping = FONT_BY_LANGUAGE.get(key)
+            # If we have an explicit mapping, try that first
+            if mapping:
+                font_path = os.path.join(ASSETS_DIR, "fonts", mapping["folder"], mapping["file"])
+                if os.path.exists(font_path):
+                    return pygame.font.Font(font_path, size)
+                # if mapped file not present, try any font under the folder
+                folder_path = os.path.join(ASSETS_DIR, "fonts", mapping["folder"])
+                if os.path.isdir(folder_path):
+                    for fname in os.listdir(folder_path):
+                        if fname.lower().endswith((".ttf", ".otf")):
+                            candidate = os.path.join(folder_path, fname)
+                            try:
+                                return pygame.font.Font(candidate, size)
+                            except Exception:
+                                continue
+            # Try generic folder matching normalized key
+            alt_folder = os.path.join(ASSETS_DIR, "fonts", key)
+            if os.path.isdir(alt_folder):
+                for fname in os.listdir(alt_folder):
+                    if fname.lower().endswith((".ttf", ".otf")):
+                        candidate = os.path.join(alt_folder, fname)
+                        try:
+                            return pygame.font.Font(candidate, size)
+                        except Exception:
+                            continue
+        except Exception:
+            pass
+        # As a last resort, try a platform/system font likely to contain CJK glyphs
+        try:
+            if key in ("ja",):
+                return pygame.font.SysFont("MS Gothic", size) or pygame.font.SysFont(fallback_name, size)
+            if key in ("ko",):
+                return pygame.font.SysFont("Malgun Gothic", size) or pygame.font.SysFont(fallback_name, size)
+            if key in ("hk", "tw"):
+                return pygame.font.SysFont("Microsoft JhengHei", size) or pygame.font.SysFont(fallback_name, size)
+            return pygame.font.SysFont(fallback_name, size)
+        except Exception:
+            return pygame.font.Font(None, size)
+
+    # Load fonts according to selected language (bundled where available)
+    # use already-loaded settings variable and normalize variants like 'zh_HK' -> 'hk'
+    lang_code = getattr(settings, "language", "en")
+    font_piece = load_font_for_language(lang_code, 28, fallback_name="SimHei")
+    font_text = load_font_for_language(lang_code, 18, fallback_name="Consolas")
+    font_button = load_font_for_language(lang_code, 16, fallback_name="Consolas")
+    font_title = load_font_for_language(lang_code, 40, fallback_name="SimHei")
+    font_avatar = load_font_for_language(lang_code, 16, fallback_name="Consolas")
+    font_timer = load_font_for_language(lang_code, 24, fallback_name="Consolas")
 
     TIMER_CHOICES = [
         {"label": "1:00", "seconds": 60, "asset": os.path.join("avatars", "ai_soldier.jpg")},
@@ -205,6 +275,16 @@ def run_game():
     menu_background_image_cache = {}
     menu_background_scaled_cache = {}
     MENU_CORNER_RADIUS = 18
+    # Pause menu image (animated uncrop)
+    PAUSE_MENU_PATH = os.path.join(ASSETS_DIR, "menu", "pause_menu.png")
+    pause_menu_image_cache = {}
+    pause_menu_scaled_cache = {}
+    # animation state
+    pause_anim_start = None
+    PAUSE_ANIM_DURATION = 0.6
+    PAUSE_ANIM_INITIAL_CROP_BOTTOM = 66
+    PAUSE_MENU_FADE = 0.4
+    PAUSE_BUTTON_FADE = 1.0
     # Side panel backgrounds
     SIDE_PANEL_DIR = os.path.join(ASSETS_DIR, "menu", "sidemenu")
     SIDE_PANEL_IMAGE_CACHE = {}
@@ -251,6 +331,7 @@ def run_game():
         "shadow": True,
         "shadow_color": (0, 0, 0, 90),
         "shadow_offset": (0, 4),
+        "bold": True,
     }
     resign_button_style = {
         "variant": "gradient",
@@ -262,6 +343,7 @@ def run_game():
         "text_color_disabled": (235, 235, 235),
         "gloss": True,
         "gloss_color": (255, 255, 255, 70),
+        "bold": True,
     }
     new_game_button_style = {
         "variant": "gradient",
@@ -273,6 +355,7 @@ def run_game():
         "text_color_disabled": (235, 235, 235),
         "gloss": True,
         "gloss_color": (255, 255, 255, 70),
+        "bold": True,
     }
     switch_button_style = {
         "variant": "image_circle",
@@ -304,6 +387,7 @@ def run_game():
         "border_color": (20, 20, 20),
         "text_color_enabled": (255, 255, 255),
         "text_color_disabled": (200, 200, 200),
+        "bold": True,
     }
     # AI change button style (white bg, red text)
     ai_change_button_style = {
@@ -314,6 +398,7 @@ def run_game():
         "border_color": (160, 40, 40),
         "text_color_enabled": (200, 30, 30),
         "text_color_disabled": (150, 150, 150),
+        "bold": True,
     }
 
     btn_in_game_settings = Button(pygame.Rect(panel_x, WINDOW_HEIGHT - 153, PANEL_WIDTH, 30))
@@ -354,6 +439,19 @@ def run_game():
     btn_log_tab_moves.style = tab_button_style
     btn_log_tab_captured.style = tab_button_style
     btn_ai_level.style = ai_change_button_style
+    # Make in-panel controls use bold labels
+    try:
+        btn_in_game_settings.style["bold"] = True
+    except Exception:
+        btn_in_game_settings.style = {"bold": True}
+    try:
+        btn_replay_prev.style["bold"] = True
+    except Exception:
+        btn_replay_prev.style = {"bold": True}
+    try:
+        btn_replay_next.style["bold"] = True
+    except Exception:
+        btn_replay_next.style = {"bold": True}
 
 
     # Pause modal
@@ -361,7 +459,8 @@ def run_game():
     pause_start_y = WINDOW_HEIGHT // 2 - 70
     btn_pause_resume = Button(pygame.Rect(pause_center_x - 100, pause_start_y, 200, 40))
     btn_pause_settings = Button(pygame.Rect(pause_center_x - 100, pause_start_y + 55, 200, 40))
-    btn_pause_to_menu = Button(pygame.Rect(pause_center_x - 100, pause_start_y + 110, 200, 40))
+    btn_pause_player_stats = Button(pygame.Rect(pause_center_x - 100, pause_start_y + 110, 200, 40))
+    btn_pause_to_menu = Button(pygame.Rect(pause_center_x - 100, pause_start_y + 165, 200, 40))
 
     settings_center_x = WINDOW_WIDTH // 2
     settings_open_dropdown = None
@@ -387,7 +486,14 @@ def run_game():
         lang = settings.language
 
         def make_theme_options(entries):
-            return [{"value": idx, "text": entry["name"][lang]} for idx, entry in enumerate(entries)]
+            # Some theme/name entries only provide a subset of languages (eg. 'en'/'vi').
+            # Use fallback to English or any available name when the requested language is missing.
+            opts = []
+            for idx, entry in enumerate(entries):
+                names = entry.get("name", {})
+                text = names.get(lang) or names.get("en") or (next(iter(names.values())) if names else "")
+                opts.append({"value": idx, "text": text})
+            return opts
 
         board_options = make_theme_options(BOARD_THEMES)
         background_options = make_theme_options(BACKGROUNDS)
@@ -406,6 +512,10 @@ def run_game():
         language_options = [
             {"value": "vi", "text": t(settings, "settings_option_vietnamese")},
             {"value": "en", "text": t(settings, "settings_option_english")},
+            {"value": "ja", "text": t(settings, "settings_option_japanese")},
+            {"value": "hk", "text": t(settings, "settings_option_cantonese")},
+            {"value": "tw", "text": t(settings, "settings_option_chinese_traditional")},
+            {"value": "ko", "text": t(settings, "settings_option_korean")},
         ]
 
         def current_label(options, value):
@@ -608,7 +718,8 @@ def run_game():
                 window_surface = pygame.display.set_mode(window_mode_size, window_flags)
             refresh_render_targets()
         elif key == "language":
-            settings.language = value
+            # Normalize language codes when user changes language
+            settings.language = _normalize_lang(value)
 
         save_settings(settings)
 
@@ -850,6 +961,28 @@ def run_game():
         if surf is not None:
             surf = _apply_round_corners(surf, MENU_CORNER_RADIUS)
         menu_background_scaled_cache[size] = surf
+        return surf
+
+    def load_pause_menu_image():
+        key = PAUSE_MENU_PATH
+        if key in pause_menu_image_cache:
+            return pause_menu_image_cache[key]
+        img = None
+        if os.path.exists(key):
+            try:
+                img = pygame.image.load(key)
+                img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
+            except Exception:
+                img = None
+        pause_menu_image_cache[key] = img
+        return img
+
+    def load_pause_menu_surface(size):
+        if size in pause_menu_scaled_cache:
+            return pause_menu_scaled_cache[size]
+        img = load_pause_menu_image()
+        surf = pygame.transform.smoothscale(img, size) if img is not None else None
+        pause_menu_scaled_cache[size] = surf
         return surf
 
     def draw_menu_background(surface, dim_alpha=0):
@@ -1709,6 +1842,14 @@ def run_game():
                             settings_page = "main"
                             paused = False
                             settings_open_dropdown = None
+                            state = "settings"
+                            continue
+
+                        if btn_pause_player_stats.is_clicked((mx, my)):
+                            settings_return_state = state
+                            settings_page = "stats"
+                            settings_open_dropdown = None
+                            paused = False
                             state = "settings"
                             continue
 
@@ -2929,37 +3070,81 @@ def run_game():
             overlay.fill((0, 0, 0, 150))
             screen.blit(overlay, (0, 0))
 
-            # Modal
-            modal_width = 360
-            modal_height = 220
+            # Modal (animated pause menu image)
+            modal_width = int(360 * 1.5)
+            modal_height = int(220 * 3)  # increased height x2 as requested
             modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
             modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
 
-            pygame.draw.rect(screen, (240, 240, 240), modal_rect, border_radius=8)
-            pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=8)
+            # load and scale pause menu image
+            pause_img = load_pause_menu_surface((modal_width, modal_height))
+            now = pygame.time.get_ticks() / 1000.0
+            if pause_anim_start is None:
+                pause_anim_start = now
+            elapsed = max(0.0, now - pause_anim_start)
+            progress = min(1.0, elapsed / PAUSE_ANIM_DURATION) if PAUSE_ANIM_DURATION > 0 else 1.0
+            # scale initial crop proportionally to modal height (original reference 220)
+            initial_crop = int(PAUSE_ANIM_INITIAL_CROP_BOTTOM * (modal_height / 220))
+            crop_bottom = int(initial_crop * (1.0 - progress))
+
+            if pause_img is not None:
+                w, h = pause_img.get_size()
+                crop_rect = pygame.Rect(0, 0, w, max(1, h - max(0, crop_bottom)))
+                try:
+                    visible = pause_img.subsurface(crop_rect)
+                except Exception:
+                    visible = pause_img
+                # compute menu fade alpha
+                menu_alpha = min(1.0, elapsed / PAUSE_MENU_FADE) if PAUSE_MENU_FADE > 0 else 1.0
+                try:
+                    visible_copy = visible.copy()
+                    visible_copy.set_alpha(int(menu_alpha * 255))
+                    screen.blit(visible_copy, (modal_rect.left, modal_rect.top + crop_bottom))
+                except Exception:
+                    screen.blit(visible, (modal_rect.left, modal_rect.top + crop_bottom))
+            else:
+                pygame.draw.rect(screen, (240, 240, 240), modal_rect, border_radius=8)
+                pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=8)
 
             title_text = lang_text["paused"]
             resume_text = lang_text["resume"]
             to_menu_text = lang_text["main_menu"]
 
-            title_surf = font_title.render(title_text, True, (20, 20, 20))
-            title_rect = title_surf.get_rect(center=(modal_rect.centerx, modal_rect.top + 45))
-            screen.blit(title_surf, title_rect)
-
-            # Pause buttons label
+            # Pause buttons label (include player stats)
             lang_text = TEXT[settings.language]
             btn_pause_resume.label = resume_text
             btn_pause_settings.label = lang_text["menu_settings"]
+            btn_pause_player_stats.label = t(settings, "settings_player_stats") if "settings_player_stats" in TEXT.get(settings.language, {}) else lang_text.get("menu_stats", "Player Stats")
             btn_pause_to_menu.label = to_menu_text
 
-            btn_pause_resume.rect.center = (modal_rect.centerx, modal_rect.top + 95)
-            btn_pause_settings.rect.center = (modal_rect.centerx, modal_rect.top + 140)
-            btn_pause_to_menu.rect.center = (modal_rect.centerx, modal_rect.top + 185)
+            # center all four buttons vertically in the modal and double the gap between them
+            buttons = (btn_pause_resume, btn_pause_settings, btn_pause_player_stats, btn_pause_to_menu)
+            btn_count = len(buttons)
+            spacing = 90  # doubled from ~45
+            group_span = (btn_count - 1) * spacing
+            first_center_y = modal_rect.centery - (group_span // 2)
+            for i, btn in enumerate(buttons):
+                btn.rect.center = (modal_rect.centerx, int(first_center_y + i * spacing))
 
-            btn_pause_resume.draw(screen, font_button, enabled=True)
-            btn_pause_settings.draw(screen, font_button, enabled=True)
-            btn_pause_to_menu.draw(screen, font_button, enabled=True)
-
+            # draw buttons onto a temporary surface and fade them in separately
+            btn_alpha = min(1.0, elapsed / PAUSE_BUTTON_FADE) if PAUSE_BUTTON_FADE > 0 else 1.0
+            buttons_surf = pygame.Surface((modal_rect.width, modal_rect.height), pygame.SRCALPHA)
+            # draw each button shifted to modal-local coords
+            for btn in buttons:
+                old_rect = btn.rect.copy()
+                try:
+                    btn.rect = btn.rect.move(-modal_rect.left, -modal_rect.top)
+                    btn.draw(buttons_surf, font_button, enabled=True)
+                finally:
+                    btn.rect = old_rect
+            try:
+                buttons_surf.set_alpha(int(btn_alpha * 255))
+            except Exception:
+                pass
+            screen.blit(buttons_surf, modal_rect.topleft)
+        else:
+            # reset animation when not paused
+            pause_anim_start = None
 
         bg_frame = load_background_surface((logical_width, base_height))
         fill_color = (0, 0, 0)
