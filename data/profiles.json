@@ -3,21 +3,15 @@
   "players": [
     {
       "id": "p1",
-      "display_name": "Zhuge Liang",
+      "display_name": "8964 996 666",
       "avatar": {
         "type": "image",
-        "color": [
-          220,
-          50,
-          50
-        ],
-        "symbol": "C",
-        "path": "C:/Users/cuong/OneDrive/Pictures/Screenshot 2025-11-26 075713.png"
+        "path": "user_avatar_1764215741.jpg"
       },
       "stats": {
         "overall": {
-          "games": 282,
-          "wins": 98,
+          "games": 283,
+          "wins": 99,
           "losses": 183,
           "draws": 1
         },
@@ -28,13 +22,13 @@
           "draws": 0
         },
         "vs_human": {
-          "games": 132,
-          "wins": 65,
+          "games": 133,
+          "wins": 66,
           "losses": 66,
           "draws": 1
         }
       },
-      "elo": 956
+      "elo": 977
     },
     {
       "id": "p2",
@@ -47,13 +41,13 @@
           220
         ],
         "symbol": "G",
-        "path": "C:/Users/cuong/OneDrive/Pictures/0e5692e0e4bdaec07db20031fe01abb8.jpg"
+        "path": "user_avatar_1764215758.jpg"
       },
       "stats": {
         "overall": {
-          "games": 133,
+          "games": 134,
           "wins": 66,
-          "losses": 67,
+          "losses": 68,
           "draws": 0
         },
         "vs_ai": {
@@ -63,13 +57,13 @@
           "draws": 0
         },
         "vs_human": {
-          "games": 133,
+          "games": 134,
           "wins": 66,
-          "losses": 67,
+          "losses": 68,
           "draws": 0
         }
       },
-      "elo": 1080
+      "elo": 1059
     }
   ],
   "last_selected": {

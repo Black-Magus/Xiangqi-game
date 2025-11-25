@@ -20,7 +20,15 @@ from data.themes import BOARD_THEMES
 from data.backgrounds import BACKGROUNDS
 from data.side_panel_backgrounds import SIDE_PANEL_BACKGROUNDS
 from core.settings_manager import Settings, load_settings, save_settings
-from data.avatar_assets import ASSETS_DIR, BUILTIN_AVATARS, get_piece_sprite
+from data.avatar_assets import (
+    ASSETS_DIR,
+    BUILTIN_AVATARS,
+    get_piece_sprite,
+    select_avatar_file_dialog,
+    AVATAR_BOARD_SIZE,
+    process_and_save_avatar,
+    delete_avatar_file,
+)
 from core.profiles_manager import DEFAULT_ELO, load_profiles, save_profiles, find_player, apply_game_result_to_profiles
 from core.engine.constants import AI_SIDE, HUMAN_SIDE
 from core.engine.ai_engine import AI_LEVELS, choose_ai_move
@@ -39,7 +47,7 @@ from core.engine.draw_helpers import (
     board_to_screen,
     screen_to_board,
 )
-from data.avatar_assets import select_avatar_file_dialog
+
 
 
 def run_game():
@@ -134,6 +142,20 @@ def run_game():
     render_size = (base_width, base_height)
     render_offset = (0, 0)
     frame_surface = pygame.Surface((logical_width, base_height), pygame.SRCALPHA).convert_alpha()
+
+    # Avatar overlay button state
+    avatar_buttons_open = False
+    avatar_buttons_side = None  # 'bottom' or 'top'
+    avatar_button_rects = {}
+    # Load component icons
+    try:
+        upload_img = pygame.image.load(os.path.join(ASSETS_DIR, "components", "upload.png")).convert_alpha()
+    except Exception:
+        upload_img = None
+    try:
+        delete_img = pygame.image.load(os.path.join(ASSETS_DIR, "components", "delete.png")).convert_alpha()
+    except Exception:
+        delete_img = None
 
     def refresh_render_targets():
         nonlocal frame_surface
@@ -307,7 +329,11 @@ def run_game():
     PAUSE_ANIM_DURATION = 0.6
     PAUSE_ANIM_INITIAL_CROP_BOTTOM = 66
     PAUSE_MENU_FADE = 0.4
-    PAUSE_BUTTON_FADE = 1.0
+    PAUSE_BUTTON_FADE = 1.5
+    # Pause menu title (displayed above buttons)
+    PAUSE_MENU_TITLE_PATH = os.path.join(ASSETS_DIR, "menu", "pause_menu_title.png")
+    pause_menu_title_image_cache = {}
+    pause_menu_title_scaled_cache = {}
     # Side panel backgrounds
     SIDE_PANEL_DIR = os.path.join(ASSETS_DIR, "menu", "sidemenu")
     SIDE_PANEL_IMAGE_CACHE = {}
@@ -1075,6 +1101,51 @@ def run_game():
         pause_menu_scaled_cache[size] = surf
         return surf
 
+    def load_pause_menu_title_image():
+        key = PAUSE_MENU_TITLE_PATH
+        if key in pause_menu_title_image_cache:
+            return pause_menu_title_image_cache[key]
+        img = None
+        if os.path.exists(key):
+            try:
+                img = pygame.image.load(key)
+                img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
+            except Exception:
+                img = None
+        pause_menu_title_image_cache[key] = img
+        return img
+
+    def load_pause_menu_title_surface(size=None):
+        """Return a scaled title surface that is NOT cropped.
+        If `size` is provided it will attempt to fit within that box preserving aspect ratio.
+        Otherwise it returns the title at half its original size (no crop)."""
+        key = size
+        if key in pause_menu_title_scaled_cache:
+            return pause_menu_title_scaled_cache[key]
+        img = load_pause_menu_title_image()
+        surf = None
+        if img is not None:
+            iw, ih = img.get_size()
+            if size is None:
+                # default: half the original image size
+                new_w = max(1, iw // 2)
+                new_h = max(1, ih // 2)
+            else:
+                tw, th = size
+                if tw <= 0 or th <= 0:
+                    new_w, new_h = max(1, iw // 2), max(1, ih // 2)
+                else:
+                    # fit the image into the target box without cropping
+                    scale = min(tw / iw, th / ih)
+                    new_w = max(1, int(round(iw * scale)))
+                    new_h = max(1, int(round(ih * scale)))
+            try:
+                surf = pygame.transform.smoothscale(img, (new_w, new_h))
+            except Exception:
+                surf = img
+        pause_menu_title_scaled_cache[key] = surf
+        return surf
+
     def draw_menu_background(surface, dim_alpha=0):
         size = surface.get_size()
         bg = load_menu_background_surface(size)
@@ -1747,6 +1818,65 @@ def run_game():
                     bottom_rect = get_bottom_avatar_rect()
                     top_rect = get_top_avatar_rect()
                     clicked_avatar = False
+
+                    # If avatar overlay is open, check clicks on the overlay buttons first
+                    if avatar_buttons_open and btn == 1:
+                        # check upload
+                        ur = avatar_button_rects.get("upload")
+                        dr = avatar_button_rects.get("delete")
+                        if ur and ur.collidepoint(mx, my):
+                            # choose and process file
+                            filename = select_avatar_file_dialog()
+                            if filename:
+                                saved = process_and_save_avatar(filename)
+                                if saved:
+                                    # determine player object for current overlay side
+                                    if avatar_buttons_side == "bottom":
+                                        if mode == "pvp":
+                                            red_id = profiles_data.get("last_selected", {}).get("pvp", {}).get("red_player_id", "p1")
+                                            player = find_player(profiles_data, red_id)
+                                        else:
+                                            human_id = profiles_data.get("last_selected", {}).get("ai", {}).get("human_player_id", "p1")
+                                            player = find_player(profiles_data, human_id)
+                                    else:
+                                        # top
+                                        black_id = profiles_data.get("last_selected", {}).get("pvp", {}).get("black_player_id", "p2")
+                                        player = find_player(profiles_data, black_id)
+                                    if player is not None:
+                                        avatar = player.setdefault("avatar", {})
+                                        avatar["type"] = "image"
+                                        avatar["path"] = saved
+                                        save_profiles(profiles_data)
+                            avatar_buttons_open = False
+                            avatar_buttons_side = None
+                            avatar_button_rects = {}
+                            continue
+                        if dr and dr.collidepoint(mx, my):
+                            # delete avatar for the overlay side
+                            if avatar_buttons_side == "bottom":
+                                if mode == "pvp":
+                                    red_id = profiles_data.get("last_selected", {}).get("pvp", {}).get("red_player_id", "p1")
+                                    player = find_player(profiles_data, red_id)
+                                else:
+                                    human_id = profiles_data.get("last_selected", {}).get("ai", {}).get("human_player_id", "p1")
+                                    player = find_player(profiles_data, human_id)
+                            else:
+                                player = find_player(profiles_data, profiles_data.get("last_selected", {}).get("pvp", {}).get("black_player_id", "p2"))
+                            if player is not None:
+                                avatar = player.get("avatar", {})
+                                path = avatar.get("path")
+                                if path:
+                                    try:
+                                        delete_avatar_file(path)
+                                    except Exception:
+                                        pass
+                                # reset avatar
+                                player["avatar"] = {}
+                                save_profiles(profiles_data)
+                            avatar_buttons_open = False
+                            avatar_buttons_side = None
+                            avatar_button_rects = {}
+                            continue
                 
                     if bottom_rect.collidepoint(mx, my):
                         clicked_avatar = True
@@ -1760,15 +1890,28 @@ def run_game():
                         if player is not None:
                             avatar = player.setdefault("avatar", {})
                             if btn == 1:
-                                current = avatar.get("path")
-                                if current in BUILTIN_AVATARS:
-                                    idx = BUILTIN_AVATARS.index(current)
-                                    idx = (idx + 1) % len(BUILTIN_AVATARS)
-                                else:
-                                    idx = 0
-                                avatar["type"] = "image"
-                                avatar["path"] = BUILTIN_AVATARS[idx]
-                                save_profiles(profiles_data)
+                                # Open avatar action overlay for this avatar (upload / delete)
+                                avatar_buttons_open = True
+                                avatar_buttons_side = "bottom"
+                                # compute button positions around avatar
+                                ar = get_bottom_avatar_rect()
+                                dx = avatar_shake_dx(Side.RED) if 'avatar_shake_dx' in globals() else 0
+                                ar = ar.move(dx, 0)
+                                btn_size = max(20, int(AVATAR_BOARD_SIZE * 0.4))
+                                gap = 6
+                                # For bottom player, place both buttons to the LEFT of avatar
+                                upload_rect = pygame.Rect(0, 0, btn_size, btn_size)
+                                delete_rect = pygame.Rect(0, 0, btn_size, btn_size)
+                                left_x = ar.left - gap - btn_size // 2
+                                upload_rect.center = (left_x, ar.centery - btn_size // 2 - gap)
+                                delete_rect.center = (left_x, ar.centery + btn_size // 2 + gap)
+                                avatar_button_rects = {"upload": upload_rect, "delete": delete_rect}
+                            elif btn == 3:
+                                filename = select_avatar_file_dialog()
+                                if filename:
+                                    avatar["type"] = "image"
+                                    avatar["path"] = filename
+                                    save_profiles(profiles_data)
                             elif btn == 3:
                                 filename = select_avatar_file_dialog()
                                 if filename:
@@ -1783,15 +1926,20 @@ def run_game():
                         if player is not None:
                             avatar = player.setdefault("avatar", {})
                             if btn == 1:
-                                current = avatar.get("path")
-                                if current in BUILTIN_AVATARS:
-                                    idx = BUILTIN_AVATARS.index(current)
-                                    idx = (idx + 1) % len(BUILTIN_AVATARS)
-                                else:
-                                    idx = 0
-                                avatar["type"] = "image"
-                                avatar["path"] = BUILTIN_AVATARS[idx]
-                                save_profiles(profiles_data)
+                                avatar_buttons_open = True
+                                avatar_buttons_side = "top"
+                                ar = get_top_avatar_rect()
+                                dx = avatar_shake_dx(Side.BLACK) if 'avatar_shake_dx' in globals() else 0
+                                ar = ar.move(dx, 0)
+                                btn_size = max(20, int(AVATAR_BOARD_SIZE * 0.4))
+                                gap = 6
+                                # For top player, place both buttons to the RIGHT of avatar
+                                upload_rect = pygame.Rect(0, 0, btn_size, btn_size)
+                                delete_rect = pygame.Rect(0, 0, btn_size, btn_size)
+                                right_x = ar.right + gap + btn_size // 2
+                                upload_rect.center = (right_x, ar.centery - btn_size // 2 - gap)
+                                delete_rect.center = (right_x, ar.centery + btn_size // 2 + gap)
+                                avatar_button_rects = {"upload": upload_rect, "delete": delete_rect}
                             elif btn == 3:
                                 filename = select_avatar_file_dialog()
                                 if filename:
@@ -2254,6 +2402,28 @@ def run_game():
                     match_started=match_started,
                     shake_dx_fn=avatar_shake_dx,
                 )
+
+            # Draw avatar overlay buttons if open
+            if avatar_buttons_open:
+                try:
+                    for key, rect in avatar_button_rects.items():
+                        # draw white circular background with subtle border
+                        bg = pygame.Surface(rect.size, pygame.SRCALPHA)
+                        radius = rect.width // 2
+                        pygame.draw.circle(bg, (255, 255, 255, 240), (radius, radius), radius)
+                        # light border
+                        pygame.draw.circle(bg, (200, 200, 200, 255), (radius, radius), radius, 1)
+                        screen.blit(bg, rect.topleft)
+                        img = upload_img if key == "upload" else delete_img
+                        if img is not None:
+                            try:
+                                img_s = pygame.transform.smoothscale(img, (rect.width - 6, rect.height - 6))
+                                img_rect = img_s.get_rect(center=rect.center)
+                                screen.blit(img_s, img_rect.topleft)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
 
 
             if can_change_side_now():
@@ -3161,13 +3331,31 @@ def run_game():
             btn_count = len(buttons)
             spacing = 90  # doubled from ~45
             group_span = (btn_count - 1) * spacing
-            first_center_y = modal_rect.centery - (group_span // 2)
+            # move buttons slightly lower so title sits above them comfortably
+            first_center_y = modal_rect.centery - (group_span // 2) + 30
             for i, btn in enumerate(buttons):
                 btn.rect.center = (modal_rect.centerx, int(first_center_y + i * spacing))
 
-            # draw buttons onto a temporary surface and fade them in separately
+            # draw buttons and the optional title onto a temporary surface and fade them in
             btn_alpha = min(1.0, elapsed / PAUSE_BUTTON_FADE) if PAUSE_BUTTON_FADE > 0 else 1.0
             buttons_surf = pygame.Surface((modal_rect.width, modal_rect.height), pygame.SRCALPHA)
+
+            # draw pause title (if available) above the buttons. Use uncropped half-size image by default.
+            title_img = load_pause_menu_title_image()
+            title_surf = None
+            if title_img is not None:
+                # prefer to show the title at half its original size (no cropping)
+                title_surf = load_pause_menu_title_surface(None)
+            if title_surf is not None:
+                title_rect = title_surf.get_rect()
+                # position title above the first button (half spacing above)
+                title_center_y_local = int(first_center_y - (spacing // 2) - modal_rect.top - 30)
+                title_rect.center = (modal_rect.width // 2, title_center_y_local)
+                try:
+                    buttons_surf.blit(title_surf, title_rect)
+                except Exception:
+                    pass
+
             # draw each button shifted to modal-local coords
             for btn in buttons:
                 old_rect = btn.rect.copy()
@@ -3176,6 +3364,7 @@ def run_game():
                     btn.draw(buttons_surf, font_button, enabled=True)
                 finally:
                     btn.rect = old_rect
+
             try:
                 buttons_surf.set_alpha(int(btn_alpha * 255))
             except Exception:

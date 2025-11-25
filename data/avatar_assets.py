@@ -330,6 +330,79 @@ def load_board_image(theme):
     _board_image_cache[key] = img
     return img
 
+
+def process_and_save_avatar(source_path: str, target_size: int = 256) -> str:
+    """Load an image from an arbitrary path, center-crop to square, resize to
+    `target_size` and save as a JPEG into the avatars folder. Returns the
+    relative filename (not absolute) on success or an empty string on failure.
+    """
+    try:
+        if not os.path.exists(source_path):
+            return ""
+        # Load with pygame to preserve compatibility with rest of the app
+        img = pygame.image.load(source_path).convert_alpha()
+        w, h = img.get_size()
+        # center-crop to square
+        if w > h:
+            x = (w - h) // 2
+            y = 0
+            side = h
+        else:
+            x = 0
+            y = (h - w) // 2
+            side = w
+        cropped = pygame.Surface((side, side), pygame.SRCALPHA)
+        cropped.blit(img, (-(x), -(y)))
+        # Resize to target_size
+        resized = pygame.transform.smoothscale(cropped, (target_size, target_size))
+
+        # Convert to RGB surface (no alpha) for JPEG saving
+        rgb = pygame.Surface((target_size, target_size))
+        rgb.fill((255, 255, 255))
+        rgb.blit(resized, (0, 0))
+
+        # Ensure avatars directory exists
+        os.makedirs(AVATAR_DIR, exist_ok=True)
+        # Unique filename
+        import time
+
+        fname = f"user_avatar_{int(time.time())}.jpg"
+        out_path = os.path.join(AVATAR_DIR, fname)
+        try:
+            pygame.image.save(rgb, out_path)
+            return fname
+        except Exception:
+            return ""
+    except Exception:
+        return ""
+
+
+def delete_avatar_file(rel_path: str) -> bool:
+    """Delete an avatar file inside the avatars folder if it exists and is
+    not one of the builtin avatar names. Returns True on successful removal.
+    """
+    try:
+        if not rel_path:
+            return False
+        if rel_path in BUILTIN_AVATARS:
+            return False
+        full = resolve_avatar_path(rel_path)
+        # Ensure the target is inside the AVATAR_DIR for safety
+        full_norm = os.path.normpath(full)
+        dir_norm = os.path.normpath(AVATAR_DIR)
+        if not full_norm.startswith(dir_norm):
+            return False
+        if os.path.exists(full_norm):
+            os.remove(full_norm)
+            # remove cached variants if present
+            keys = [k for k in list(_avatar_cache.keys()) if k[0] == full_norm]
+            for k in keys:
+                del _avatar_cache[k]
+            return True
+    except Exception:
+        pass
+    return False
+
 def load_board_border_image(theme):
     path_rel = theme.get("border_image")
     if not path_rel:
