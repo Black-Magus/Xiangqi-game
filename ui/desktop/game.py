@@ -147,6 +147,9 @@ def run_game():
     avatar_buttons_open = False
     avatar_buttons_side = None  # 'bottom' or 'top'
     avatar_button_rects = {}
+    # Active piece move animations
+    # Each entry: {"piece": Piece, "from": (c,r), "to": (c,r), "start": ticks, "duration": seconds, "sprite": Surface}
+    animations = []
     # Load component icons
     try:
         upload_img = pygame.image.load(os.path.join(ASSETS_DIR, "components", "upload.png")).convert_alpha()
@@ -326,7 +329,7 @@ def run_game():
     pause_menu_scaled_cache = {}
     # animation state
     pause_anim_start = None
-    PAUSE_ANIM_DURATION = 0.6
+    PAUSE_ANIM_DURATION = 0.25
     PAUSE_ANIM_INITIAL_CROP_BOTTOM = 66
     PAUSE_MENU_FADE = 0.4
     PAUSE_BUTTON_FADE = 1.5
@@ -1661,7 +1664,7 @@ def run_game():
             in_check_side = None
             return
 
-        board.move_piece(mv)
+        move_piece_with_animation(mv)
         move_history.append(mv)
         redo_stack.clear()
         log_follow_latest = True

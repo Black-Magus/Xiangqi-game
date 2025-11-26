@@ -18,6 +18,8 @@ class Settings:
         self.resolution_ratio = "fit"  # "fit" or "wide"
         self.background_index = 0
         self.side_panel_background_index = 0
+        # Enable piece movement animation during gameplay
+        self.piece_animation = True
         # log box transparency settings (0..255). If disabled, the log box is opaque.
         self.log_box_transparency_enabled = True
         self.log_box_transparency = 200
@@ -40,6 +42,7 @@ def settings_to_dict(settings: Settings) -> Dict[str, Any]:
         "language": settings.language,
         "piece_body_theme_index": settings.piece_body_theme_index,
         "piece_symbol_set_index": settings.piece_symbol_set_index,
+        "piece_animation": settings.piece_animation,
         "resolution_ratio": settings.resolution_ratio,
         "background_index": settings.background_index,
         "side_panel_background_index": settings.side_panel_background_index,
@@ -92,6 +95,11 @@ def load_settings() -> Settings:
             s.piece_body_theme_index = int(data["piece_body_theme_index"]) % len(PIECE_BODY_THEMES)
         if "piece_symbol_set_index" in data and PIECE_SYMBOL_SETS:
             s.piece_symbol_set_index = int(data["piece_symbol_set_index"]) % len(PIECE_SYMBOL_SETS)
+        if "piece_animation" in data:
+            try:
+                s.piece_animation = bool(data.get("piece_animation", True))
+            except Exception:
+                s.piece_animation = True
         if data.get("resolution_ratio") in ("fit", "wide"):
             s.resolution_ratio = data["resolution_ratio"]
         if "background_index" in data and BACKGROUNDS:

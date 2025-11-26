@@ -1,5 +1,3 @@
-# ui/desktop/ai_engine.py
-
 import math
 import random
 
@@ -11,57 +9,156 @@ from core.engine.constants import AI_SIDE
 
 PIECE_VALUES = {
     PieceType.GENERAL: 10000,
-    PieceType.ROOK: 500,
-    PieceType.CANNON: 275,
-    PieceType.HORSE: 275,
-    PieceType.ELEPHANT: 125,
-    PieceType.ADVISOR: 125,
-    PieceType.SOLDIER: 60,
+    PieceType.ROOK: 600,
+    PieceType.CANNON: 300,
+    PieceType.HORSE: 300,
+    PieceType.ELEPHANT: 150,
+    PieceType.ADVISOR: 150,
+    PieceType.SOLDIER: 70,
 }
 
 AI_LEVELS = [
     {
-        "name": "Noob Bot",
-        "avatar_char": "N",
-        "color": (120, 170, 255),
+        "name": "Level 1 - Beginner",
+        "avatar_char": "1",
+        "color": (160, 160, 160),
         "depth": 1,
-        "randomness": 0.9,
+        "randomness": 0.9,    
+        "eval_noise": 80,       
         "avatar_path": "ai_casual.jpg",
-        "elo": 900,
+        "elo": 800,
     },
     {
-        "name": "Pro Bot dasdsadsaddsagdsfsddfsdf",
-        "avatar_char": "P",
-        "color": (120, 220, 120),
+        "name": "Level 2 - Casual",
+        "avatar_char": "2",
+        "color": (120, 170, 255),
         "depth": 1,
-        "randomness": 0.2,
+        "randomness": 0.5,
+        "eval_noise": 50,
+        "avatar_path": "ai_casual.jpg",
+        "elo": 1000,
+    },
+    {
+        "name": "Level 3 - Student",
+        "avatar_char": "3",
+        "color": (120, 220, 120),
+        "depth": 2,
+        "randomness": 0.25,
+        "eval_noise": 30,
         "avatar_path": "ai_soldier.jpg",
         "elo": 1200,
     },
     {
-        "name": "Hacker Bot",
-        "avatar_char": "H",
+        "name": "Level 4 - Strong",
+        "avatar_char": "4",
+        "color": (220, 180, 120),
+        "depth": 3,
+        "randomness": 0.1,
+        "eval_noise": 15,
+        "avatar_path": "ai_soldier.jpg",
+        "elo": 1400,
+    },
+    {
+        "name": "Level 5 - Master",
+        "avatar_char": "5",
         "color": (220, 120, 120),
-        "depth": 2,
+        "depth": 3,
         "randomness": 0.0,
+        "eval_noise": 5,
         "avatar_path": "ai_general.jpg",
-        "elo": 1500,
+        "elo": 1650,
+    },
+    {
+        "name": "Level 6 - Grandmaster",
+        "avatar_char": "6",
+        "color": (255, 80, 80),
+        "depth": 4,             
+        "randomness": 0.0,
+        "eval_noise": 0,
+        "avatar_path": "ai_general.jpg",
+        "elo": 1850,
     },
 ]
 
 
+def _evaluate_piece_positional(p, c, r) -> int:
+    """
+    Trả về bonus vị trí cho quân p tại c, r
+    Bonus là từ góc nhìn của chính quân đó
+    Sau đó hàm evaluate_board sẽ cộng cho ai_side và trừ cho đối thủ
+    Giả định: Red ở phía dưới (r lớn), Black ở phía trên (r nhỏ)
+    """
+    bonus = 0
+
+    if p.ptype == PieceType.SOLDIER:
+        if p.side == Side.RED:
+            forward = 9 - r         
+            crossed_river = r <= 4
+        else:
+            forward = r
+            crossed_river = r >= 5
+
+        bonus += forward * 2
+        if crossed_river:
+            bonus += 25
+
+        if 3 <= c <= 5:
+            bonus += 6
+
+    elif p.ptype == PieceType.HORSE:
+        if 2 <= c <= 6:
+            bonus += 6
+        if 3 <= r <= 6:
+            bonus += 4
+
+    elif p.ptype == PieceType.ROOK:
+        bonus += max(0, 8 - 2 * abs(4 - c))
+
+    elif p.ptype == PieceType.CANNON:
+        if 2 <= c <= 6 and 2 <= r <= 7:
+            bonus += 8
+
+    elif p.ptype == PieceType.GENERAL:
+        if c == 4:
+            bonus += 10
+        if (p.side == Side.RED and r >= 7) or (p.side == Side.BLACK and r <= 2):
+            bonus += 6
+
+    elif p.ptype == PieceType.ELEPHANT:
+        if (p.side == Side.RED and r >= 5) or (p.side == Side.BLACK and r <= 4):
+            bonus += 6
+        if 2 <= c <= 6:
+            bonus += 4
+
+    elif p.ptype == PieceType.ADVISOR:
+        if c == 4 and ((p.side == Side.RED and r >= 8) or (p.side == Side.BLACK and r <= 1)):
+            bonus += 8
+
+    return bonus
+
+
 def evaluate_board(board: Board, ai_side: Side) -> int:
+    """
+    Đánh giá bàn cờ từ góc nhìn ai_side.
+    Dựa trên vật chất + một số heuristic vị trí đơn giản.
+    """
     score = 0
+
     for r in range(BOARD_ROWS):
         for c in range(BOARD_COLS):
             p = board.get_piece(c, r)
             if p is None:
                 continue
-            val = PIECE_VALUES.get(p.ptype, 0)
+
+            base = PIECE_VALUES.get(p.ptype, 0)
+            pos_bonus = _evaluate_piece_positional(p, c, r)
+            piece_score = base + pos_bonus
+
             if p.side == ai_side:
-                score += val
+                score += piece_score
             else:
-                score -= val
+                score -= piece_score
+
     return score
 
 
@@ -80,6 +177,41 @@ def generate_all_legal_moves(board: Board, side: Side):
     return moves
 
 
+def _move_sort_key(mv: Move, ai_side: Side) -> int:
+    """
+    Heuristic sắp xếp nước đi để alpha-beta cắt tỉa tốt hơn.
+    Ưu tiên:
+      - ăn quân giá trị lớn
+      - binh tiến lên
+      - quân mạnh đi vào trung tâm
+    """
+    score = 0
+
+    if mv.captured is not None:
+        cap_val = PIECE_VALUES.get(mv.captured.ptype, 0)
+        own_val = PIECE_VALUES.get(mv.piece.ptype, 0)
+        score += 10 * cap_val - own_val
+
+    from_c, from_r = mv.from_pos
+    to_c, to_r = mv.to_pos
+
+    if mv.piece.ptype == PieceType.SOLDIER:
+        if mv.piece.side == Side.RED:
+            if to_r < from_r:
+                score += 8
+        else:
+            if to_r > from_r:
+                score += 8
+
+    if mv.piece.ptype in (PieceType.ROOK, PieceType.CANNON, PieceType.HORSE):
+        score += max(0, 6 - abs(4 - to_c))
+
+    if mv.piece.side == ai_side:
+        score += 3
+
+    return score
+
+
 def minimax_search(board: Board,
                    depth: int,
                    ai_side: Side,
@@ -92,9 +224,13 @@ def minimax_search(board: Board,
     moves = generate_all_legal_moves(board, current_side)
     if not moves:
         if board.is_in_check(current_side):
+            # Chiếu hết
             return -100000 if current_side == ai_side else 100000
         else:
+            # Hòa
             return 0
+
+    moves.sort(key=lambda mv: _move_sort_key(mv, ai_side), reverse=True)
 
     if current_side == ai_side:
         best = -math.inf
@@ -102,13 +238,16 @@ def minimax_search(board: Board,
             from_c, from_r = mv.from_pos
             to_c, to_r = mv.to_pos
             captured = board._apply_temp_move(from_c, from_r, to_c, to_r)
+
             next_side = Side.RED if current_side == Side.BLACK else Side.BLACK
             score = minimax_search(board, depth - 1, ai_side, next_side, alpha, beta)
+
             board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
 
             if score > best:
                 best = score
-            alpha = max(alpha, score)
+            if score > alpha:
+                alpha = score
             if beta <= alpha:
                 break
         return best
@@ -118,26 +257,39 @@ def minimax_search(board: Board,
             from_c, from_r = mv.from_pos
             to_c, to_r = mv.to_pos
             captured = board._apply_temp_move(from_c, from_r, to_c, to_r)
+
             next_side = Side.RED if current_side == Side.BLACK else Side.BLACK
             score = minimax_search(board, depth - 1, ai_side, next_side, alpha, beta)
+
             board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
 
             if score < best:
                 best = score
-            beta = min(beta, score)
+            if score < beta:
+                beta = score
             if beta <= alpha:
                 break
         return best
 
 
 def choose_ai_move(board: Board, level_cfg, side: Side):
+    """
+    Chọn nước đi cho AI với cấu hình level_cfg.
+    - depth: độ sâu tìm kiếm minimax
+    - randomness: xác suất chơi hẳn một nước random
+    - eval_noise: thêm nhiễu vào đánh giá để level thấp chơi ngu hơn
+    """
     moves = generate_all_legal_moves(board, side)
     if not moves:
         return None
 
+    moves.sort(key=lambda mv: _move_sort_key(mv, side), reverse=True)
+
     depth = level_cfg["depth"]
     randomness = level_cfg["randomness"]
+    eval_noise = level_cfg.get("eval_noise", 0.0)
 
+    # Với level thấp có khả năng đi hoàn toàn random
     if randomness > 0 and random.random() < randomness:
         return random.choice(moves)
 
@@ -156,6 +308,9 @@ def choose_ai_move(board: Board, level_cfg, side: Side):
             score = minimax_search(board, depth - 1, side, next_side, -math.inf, math.inf)
 
         board._undo_temp_move(from_c, from_r, to_c, to_r, captured)
+
+        if eval_noise > 0:
+            score += random.uniform(-eval_noise, eval_noise)
 
         if score > best_score + 1e-6:
             best_score = score
