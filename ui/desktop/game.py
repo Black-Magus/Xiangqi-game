@@ -1,6 +1,7 @@
 import os
 import math
 import pygame
+import threading
 
 from config import (
     BOARD_COLS,
@@ -280,6 +281,11 @@ def run_game():
     result_recorded = False
     replay_index = None
     paused = False 
+    # Async AI thinking state
+    ai_thinking = False
+    ai_think_thread = None
+    # holder dict for thread -> main loop communication: {"done": bool, "move": (from_pos, to_pos) or None}
+    ai_pending_move_holder = None
 
     # Log (replay/tabs)
     log_active_tab = "moves"   # Moves or Captured
@@ -1688,38 +1694,95 @@ def run_game():
             start_move_animation(mv)
 
     def ai_make_move():
+        # Non-blocking AI: start background thread to compute move on a board copy,
+        # then apply the resulting coordinates on the main thread when ready.
         nonlocal current_side, move_history, redo_stack, game_over, winner
         nonlocal in_check_side, selected, valid_moves, hovered_move
         nonlocal log_follow_latest, human_side, ai_side
+        nonlocal ai_thinking, ai_think_thread, ai_pending_move_holder
+
         if game_over or current_side != ai_side or not ai_match_started:
             return
-        level_cfg = AI_LEVELS[ai_level_index]
-        mv = choose_ai_move(board, level_cfg, ai_side)
-        if mv is None:
-            if board.is_in_check(ai_side):
-                game_over = True
-                winner = human_side
-                start_loss_badge_animation(ai_side, last_move=move_history[-1] if move_history else None)
-                register_result_if_needed(human_side, False)
-                replay_index = len(move_history)
-            else:
-                game_over = True
-                winner = None
-                register_result_if_needed(None, True)
-                replay_index = len(move_history)
-            in_check_side = None
+
+        # If a worker result is ready, consume it and apply the move
+        if ai_pending_move_holder is not None and ai_pending_move_holder.get("done"):
+            res = ai_pending_move_holder.get("move")
+            # reset holder and thinking flag
+            ai_pending_move_holder = None
+            ai_thinking = False
+
+            if res is None:
+                # No legal moves -> game over or draw
+                if board.is_in_check(ai_side):
+                    game_over = True
+                    winner = human_side
+                    start_loss_badge_animation(ai_side, last_move=move_history[-1] if move_history else None)
+                    register_result_if_needed(human_side, False)
+                    replay_index = len(move_history)
+                else:
+                    game_over = True
+                    winner = None
+                    register_result_if_needed(None, True)
+                    replay_index = len(move_history)
+                in_check_side = None
+                return
+
+            from_pos, to_pos = res
+            sel_c, sel_r = from_pos
+            col, row = to_pos
+            moving_piece = board.get_piece(sel_c, sel_r)
+            captured = board.get_piece(col, row)
+            mv = Move((sel_c, sel_r), (col, row), moving_piece, captured)
+
+            move_piece_with_animation(mv)
+            move_history.append(mv)
+            redo_stack.clear()
+            log_follow_latest = True
+            selected = None
+            valid_moves = []
+            hovered_move = None
+
+            current_side = human_side
+            update_game_state_after_side_change()
             return
 
-        move_piece_with_animation(mv)
-        move_history.append(mv)
-        redo_stack.clear()
-        log_follow_latest = True
-        selected = None
-        valid_moves = []
-        hovered_move = None
+        # If already thinking, do nothing (worker will set result when done)
+        if ai_thinking:
+            return
 
-        current_side = human_side
-        update_game_state_after_side_change()
+        # Start background worker
+        ai_thinking = True
+        ai_pending_move_holder = {"done": False, "move": None}
+
+        level_cfg = AI_LEVELS[ai_level_index]
+
+        # create a lightweight deep copy of the board suitable for AI search
+        def _make_board_copy(src_board: Board) -> Board:
+            b = Board(red_on_bottom=src_board.red_on_bottom)
+            b.grid = [[None for _ in range(BOARD_COLS)] for _ in range(BOARD_ROWS)]
+            from core.engine.types import Piece as PieceCls
+            for rr in range(BOARD_ROWS):
+                for cc in range(BOARD_COLS):
+                    p = src_board.get_piece(cc, rr)
+                    if p is not None:
+                        b.grid[rr][cc] = PieceCls(p.side, p.ptype)
+            return b
+
+        def _worker(board_copy, level_cfg, side, holder):
+            try:
+                mv = choose_ai_move(board_copy, level_cfg, side)
+                if mv is None:
+                    holder["move"] = None
+                else:
+                    holder["move"] = (mv.from_pos, mv.to_pos)
+            except Exception:
+                holder["move"] = None
+            finally:
+                holder["done"] = True
+
+        board_copy = _make_board_copy(board)
+        ai_think_thread = threading.Thread(target=_worker, args=(board_copy, level_cfg, ai_side, ai_pending_move_holder), daemon=True)
+        ai_think_thread.start()
 
     running = True
     while running:
@@ -2718,10 +2781,17 @@ def run_game():
                         font_avatar,
                         grayscale=loser_side == human_side,
                     )
-                    label = t(settings, "label_red_player").format(
-                        name=human_player.get("display_name", "Player 1")
-                    )
-                    color = (200, 0, 0) if current_side == Side.RED else (0, 0, 0)
+                    # Use the correct label (red/black) depending on which side the human is on
+                    if human_side == Side.RED:
+                        label = t(settings, "label_red_player").format(
+                            name=human_player.get("display_name", "Player 1")
+                        )
+                        color = (200, 0, 0) if current_side == Side.RED else (0, 0, 0)
+                    else:
+                        label = t(settings, "label_black_player").format(
+                            name=human_player.get("display_name", "Player 1")
+                        )
+                        color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
                     txt = font_text.render(label, True, color)
                     screen.blit(txt, (panel_x + small_size + 8, y_players))
                     y_players += small_size + 6
@@ -2740,7 +2810,11 @@ def run_game():
                     grayscale=loser_side == ai_side,
                 )
                 label = t(settings, "label_ai_player").format(name=ai_cfg["name"])
-                color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
+                # Highlight the AI label according to which side the AI is on
+                if ai_side == Side.RED:
+                    color = (200, 0, 0) if current_side == Side.RED else (0, 0, 0)
+                else:
+                    color = (0, 0, 200) if current_side == Side.BLACK else (0, 0, 0)
                 txt = font_text.render(label, True, color)
                 screen.blit(txt, (panel_x + small_size + 8, y_players))
                 y_players += small_size + 6

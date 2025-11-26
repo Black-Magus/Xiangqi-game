@@ -19,4 +19,14 @@ SIDE_PANEL_BACKGROUNDS = [
         "name": {"en": "Yin Yang Wuxing", "vi": "Âm Dương Ngũ Hành"},
         "file": "4.png",
     },
+    {
+        "key": "side5",
+        "name": {"en": "Three Pure Ones", "vi": "Tam Thanh"},
+        "file": "5.png",
+    },
+    {
+        "key": "side6",
+        "name": {"en": "Three Periods of Universal Salvation", "vi": "Tam Kỳ Phổ Độ"},
+        "file": "6.png",
+    },
 ]

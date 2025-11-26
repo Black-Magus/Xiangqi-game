@@ -10,15 +10,15 @@
       },
       "stats": {
         "overall": {
-          "games": 292,
-          "wins": 103,
-          "losses": 188,
+          "games": 298,
+          "wins": 106,
+          "losses": 191,
           "draws": 1
         },
         "vs_ai": {
-          "games": 158,
-          "wins": 37,
-          "losses": 121,
+          "games": 164,
+          "wins": 40,
+          "losses": 124,
           "draws": 0
         },
         "vs_human": {
@@ -28,7 +28,7 @@
           "draws": 1
         }
       },
-      "elo": 956
+      "elo": 984
     },
     {
       "id": "p2",
@@ -68,8 +68,8 @@
   ],
   "last_selected": {
     "pvp": {
-      "red_player_id": "p1",
-      "black_player_id": "p2"
+      "red_player_id": "p2",
+      "black_player_id": "p1"
     },
     "ai": {
       "human_player_id": "p1"
