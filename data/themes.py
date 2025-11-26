@@ -1,32 +1,5 @@
 BOARD_THEMES = [
     {
-        "key": "classic",
-        "name": {"en": "Classic", "vi": "Cổ điển"},
-        "bg_color": (230, 200, 150),
-        "line_color": (80, 40, 10),
-        "river_color": (220, 210, 170),
-        "border_image": "classic_border.png",
-        "border_inner_size": (464, 522),
-    },
-    {
-        "key": "dark_wood",
-        "name": {"en": "Dark wood", "vi": "Gỗ tối"},
-        "bg_color": (80, 60, 50),
-        "line_color": (220, 200, 160),
-        "river_color": (100, 80, 60),
-        "border_image": "dark_wood_border.png",
-        "border_inner_size": (464, 522),
-    },
-    {
-        "key": "green_board",
-        "name": {"en": "Green board", "vi": "Xanh cổ điển"},
-        "bg_color": (200, 220, 200),
-        "line_color": (40, 80, 40),
-        "river_color": (180, 210, 190),
-        "border_image": "green_board_border.png",
-        "border_inner_size": (464, 522),
-    },
-    {
         "key": "classic1_png",
         "name": {"en": "Classic 1", "vi": "Classic 1"},
         "bg_color": (0, 0, 0),  

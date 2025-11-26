@@ -57,6 +57,85 @@ def run_game():
     settings = load_settings()
     profiles_data = load_profiles()
 
+    # Initialize mixer and music playback
+    MUSIC_END_EVENT = pygame.USEREVENT + 5
+    music_available_files = []
+    current_music_index = 0
+    music_playing = False
+
+    def refresh_bgm_files():
+        nonlocal music_available_files
+        bgm_dir = os.path.join(ASSETS_DIR, "bgm")
+        files = []
+        try:
+            if os.path.isdir(bgm_dir):
+                for fn in sorted(os.listdir(bgm_dir)):
+                    if fn.lower().endswith((".mp3", ".ogg", ".wav", ".flac")):
+                        files.append(fn)
+        except Exception:
+            files = []
+        music_available_files = files
+
+    try:
+        pygame.mixer.init()
+    except Exception:
+        pass
+
+    refresh_bgm_files()
+
+    def stop_music_playback():
+        nonlocal music_playing
+        try:
+            pygame.mixer.music.stop()
+        except Exception:
+            pass
+        music_playing = False
+
+    def start_music_playback():
+        nonlocal current_music_index, music_playing
+        try:
+            pl = getattr(settings, "music_playlist", []) or []
+            if not getattr(settings, "music_enabled", True) or not pl:
+                stop_music_playback()
+                return
+            # clamp index
+            if current_music_index >= len(pl):
+                current_music_index = 0
+            filename = pl[current_music_index]
+            full = os.path.join(ASSETS_DIR, "bgm", filename)
+            if not os.path.exists(full):
+                # refresh and skip if missing
+                refresh_bgm_files()
+                stop_music_playback()
+                return
+            try:
+                pygame.mixer.music.load(full)
+                vol = float(getattr(settings, "music_volume", 80)) / 100.0
+                pygame.mixer.music.set_volume(max(0.0, min(1.0, vol)))
+                pygame.mixer.music.play(loops=0)
+                pygame.mixer.music.set_endevent(MUSIC_END_EVENT)
+                music_playing = True
+            except Exception:
+                music_playing = False
+        except Exception:
+            music_playing = False
+
+    def play_next_music():
+        nonlocal current_music_index
+        pl = getattr(settings, "music_playlist", []) or []
+        if not pl:
+            stop_music_playback()
+            return
+        current_music_index = (current_music_index + 1) % len(pl)
+        start_music_playback()
+
+    # start music if appropriate
+    try:
+        if getattr(settings, "music_enabled", True) and getattr(settings, "music_playlist", []):
+            start_music_playback()
+    except Exception:
+        pass
+
     base_width = WINDOW_WIDTH
     base_height = WINDOW_HEIGHT
     base_ratio = base_width / base_height
@@ -259,6 +338,54 @@ def run_game():
     font_avatar = load_font_for_language(lang_code, 16, fallback_name="Consolas")
     font_timer = load_font_for_language(lang_code, 24, fallback_name="Consolas")
 
+    def _wrap_label_lines(text: str, font, max_width: int, max_lines: int = 2):
+        """Return a list of text lines (strings) that fit within max_width using the given font.
+        Will produce at most max_lines; the last line is ellipsized if necessary."""
+        if not text:
+            return []
+        # quick measurement
+        if font.size(text)[0] <= max_width:
+            return [text]
+
+        words = text.split()
+        lines = []
+        cur = ""
+        for w in words:
+            candidate = (cur + " " + w).strip()
+            if font.size(candidate)[0] <= max_width:
+                cur = candidate
+            else:
+                if cur:
+                    lines.append(cur)
+                else:
+                    # single very long word - break it by characters
+                    candidate = w
+                    while font.size(candidate + "…")[0] > max_width and len(candidate) > 1:
+                        candidate = candidate[:-1]
+                    lines.append(candidate + ("…" if font.size(w)[0] > max_width else ""))
+                    cur = ""
+                    continue
+                cur = w
+            if len(lines) >= max_lines:
+                break
+        if cur and len(lines) < max_lines:
+            lines.append(cur)
+
+        # If too many lines, truncate to max_lines with ellipsis on last
+        if len(lines) > max_lines:
+            lines = lines[:max_lines]
+
+        if len(lines) == max_lines:
+            last = lines[-1]
+            if font.size(last)[0] > max_width:
+                # ellipsize last line
+                s = last
+                while font.size(s + "…")[0] > max_width and len(s) > 0:
+                    s = s[:-1]
+                lines[-1] = s + "…"
+
+        return lines
+
     TIMER_CHOICES = [
         {"label": "1:00", "seconds": 60, "asset": os.path.join("components", "1m.jpg")},
         {"label": "5:00", "seconds": 300, "asset": os.path.join("components", "5m.jpg")},
@@ -322,6 +449,7 @@ def run_game():
     timer_thumbnail_cache = {}
     BACKGROUND_DIR = os.path.join(ASSETS_DIR, "bg")
     background_modal_open = False
+    music_modal_open = False
     background_image_cache = {}
     background_scaled_cache = {}
     background_thumb_cache = {}
@@ -343,6 +471,10 @@ def run_game():
     PAUSE_MENU_TITLE_PATH = os.path.join(ASSETS_DIR, "menu", "pause_menu_title.png")
     pause_menu_title_image_cache = {}
     pause_menu_title_scaled_cache = {}
+    # Modal background (shared)
+    MODAL_BG_PATH = os.path.join(ASSETS_DIR, "menu", "modal_bg.png")
+    modal_bg_image_cache = {}
+    modal_bg_scaled_cache = {}
     # Side panel backgrounds
     SIDE_PANEL_DIR = os.path.join(ASSETS_DIR, "menu", "sidemenu")
     SIDE_PANEL_IMAGE_CACHE = {}
@@ -717,11 +849,40 @@ def run_game():
                 ],
                 "enabled": True,
             },
+            "music_volume": {
+                "label": t(settings, "settings_label_music_volume"),
+                "value": getattr(settings, "music_volume", 80),
+                "options": [],
+                "enabled": True,
+                "kind": "slider",
+                "enable_key": "music_enabled",
+                "max": 100,
+                "selected_label": f"{getattr(settings, 'music_volume', 80)}%",
+            },
+            # show current playing track in the music row label when available
+            "music": {
+                "label": t(settings, "settings_label_music"),
+                "value": None,
+                "options": [],
+                "enabled": True,
+                "kind": "modal",
+                # show the currently playing track in the value area when available,
+                # otherwise show count or not-available text
+                "selected_label": (lambda: (
+                    (os.path.splitext(getattr(settings, "music_playlist", [""])[current_music_index])[0])
+                    if (music_playing and getattr(settings, "music_playlist", []) and 0 <= current_music_index < len(getattr(settings, "music_playlist", [])))
+                    else (f"{len(getattr(settings, 'music_playlist', []) )} selected" if getattr(settings, 'music_playlist', []) else t(settings, "settings_option_not_available"))
+                ))(),
+                "keep_selected_label": True,
+            },
         }
 
         for key, item in items.items():
             if item.get("kind") == "slider":
                 # keep selected_label already set for slider
+                continue
+            # if item already provides a selected_label to keep, do not overwrite it
+            if item.get("keep_selected_label"):
                 continue
             item["selected_label"] = current_label(item["options"], item["value"]) if item.get("options") else str(item.get("value"))
 
@@ -773,7 +934,7 @@ def run_game():
                 ("appearance", t(settings, "settings_section_appearance"), ["side_panel_background", "log_box_transparency", "background", "board_theme", "piece_body", "piece_symbols"])
             ],
             "display": [("display", t(settings, "settings_section_display"), ["display_mode", "resolution"])],
-            "audio": [("audio", t(settings, "settings_section_audio"), [])],
+            "audio": [("audio", t(settings, "settings_section_audio"), ["music_volume", "music"])],
         }
 
         sections = section_map.get(category, section_map["general"])
@@ -800,15 +961,18 @@ def run_game():
                         "options": item["options"],
                         "value": item["value"],
                         "kind": kind,
+                        "enable_key": item.get("enable_key"),
+                        "max": item.get("max"),
                     }
                 )
 
                 if kind == "dropdown" and settings_open_dropdown == key and item["enabled"]:
                     option_height = 30
+                    # create option rects with no gap between them
                     for idx, opt in enumerate(item["options"]):
                         opt_rect = pygame.Rect(
                             value_rect.x,
-                            value_rect.bottom + 4 + idx * (option_height + 4),
+                            value_rect.bottom + idx * option_height,
                             value_rect.width,
                             option_height,
                         )
@@ -962,21 +1126,27 @@ def run_game():
         return surf
 
     def build_timer_modal_layout():
-        modal_width = 520
-        modal_height = 360
+        modal_width = 520 * 1.8
+        modal_height = 360 * 1.8
         modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
         modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
 
+        # Keep option cards smaller than the modal (don't scale with modal)
         padding = 20
-        header_height = 90
+        header_height = 220
         cols = 2
-        card_w = (modal_width - (cols + 1) * padding) // cols
-        card_h = 120
+        card_w = 240
+        card_h = 130
+
+        # Compute a centered content area for the cards so they stay centered in the larger modal
+        content_width = cols * card_w + (cols - 1) * padding
+        content_left = modal_rect.centerx - content_width // 2
+
         options = []
         for idx, choice in enumerate(TIMER_CHOICES):
             row = idx // cols
             col = idx % cols
-            x = modal_rect.x + padding + col * (card_w + padding)
+            x = content_left + col * (card_w + padding)
             y = modal_rect.y + header_height + row * (card_h + padding)
             rect = pygame.Rect(x, y, card_w, card_h)
             thumb_rect = pygame.Rect(rect.x + 10, rect.y + 10, rect.width - 20, 70)
@@ -989,8 +1159,45 @@ def run_game():
                 }
             )
 
-        close_rect = pygame.Rect(modal_rect.right - 78, modal_rect.top + 16, 60, 26)
+        # Center the close/return button horizontally at the bottom of the modal
+        close_rect = pygame.Rect(0, 0, 100, 34)
+        # place the Back button higher than the bottom edge (as requested)
+        close_y = modal_rect.top + modal_rect.height - max(60, int(modal_rect.height * TIMER_MODAL_CLOSE_Y_FACTOR))
+        close_rect.center = (modal_rect.centerx, close_y)
+
         return {"modal_rect": modal_rect, "options": options, "close_rect": close_rect}
+
+    def build_music_modal_layout():
+        # Build a vertical list modal showing available music files under assets/bgm
+        bgm_dir = os.path.join(ASSETS_DIR, "bgm")
+        files = []
+        try:
+            if os.path.isdir(bgm_dir):
+                for fn in sorted(os.listdir(bgm_dir)):
+                    if fn.lower().endswith((".mp3", ".ogg", ".wav", ".flac")):
+                        files.append(fn)
+        except Exception:
+            files = []
+
+        # Layout
+        modal_width = min(680, WINDOW_WIDTH - 80)
+        modal_height = min(480, WINDOW_HEIGHT - 80)
+        modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
+        modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+
+        padding = 50
+        # make each list item slightly shorter for a tighter layout
+        item_h = 28
+        start_y = modal_rect.y + padding + 38
+        content_x = modal_rect.x + padding
+        options = []
+        for idx, fn in enumerate(files):
+            rect = pygame.Rect(content_x, start_y + idx * (item_h + 8), modal_rect.width - padding * 2, item_h)
+            options.append({"index": idx, "file": fn, "rect": rect})
+
+        close_rect = pygame.Rect(0, 0, 100, 34)
+        close_rect.center = (modal_rect.centerx, modal_rect.bottom - 70)
+        return {"modal_rect": modal_rect, "options": options, "close_rect": close_rect, "files": files}
 
     def get_background_entry(idx=None):
         if not BACKGROUNDS:
@@ -1169,6 +1376,33 @@ def run_game():
         pause_menu_title_scaled_cache[key] = surf
         return surf
 
+    def load_modal_bg_image():
+        key = MODAL_BG_PATH
+        if key in modal_bg_image_cache:
+            return modal_bg_image_cache[key]
+        img = None
+        if os.path.exists(key):
+            try:
+                img = pygame.image.load(key)
+                img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
+            except Exception:
+                img = None
+        modal_bg_image_cache[key] = img
+        return img
+
+    def load_modal_bg_surface(size):
+        if size in modal_bg_scaled_cache:
+            return modal_bg_scaled_cache[size]
+        img = load_modal_bg_image()
+        surf = pygame.transform.smoothscale(img, size) if img is not None else None
+        modal_bg_scaled_cache[size] = surf
+        return surf
+
+    # Timer modal positioning constants (tweak these to move title/subtitle/close button)
+    TIMER_MODAL_TITLE_Y_FACTOR = 0.16  # fraction of modal height for title top
+    TIMER_MODAL_SUBTITLE_SPACING = 10  # pixels between title bottom and subtitle top
+    TIMER_MODAL_CLOSE_Y_FACTOR = 0.17  # fraction of modal height from bottom for close button
+
     def draw_menu_background(surface, dim_alpha=0):
         size = surface.get_size()
         bg = load_menu_background_surface(size)
@@ -1208,45 +1442,63 @@ def run_game():
         save_settings(settings)
 
     def build_background_modal_layout():
-        cols = max(1, min(3, len(BACKGROUNDS) if BACKGROUNDS else 1))
+        # Fixed layout: 4 columns x 2 rows per page, scale cards by 1.5
+        cols = 4
+        rows = 2
+        items_per_page = cols * rows
         padding = 20
-        header_height = 90
-        thumb_size = 120
-        card_w = thumb_size + 28
-        card_h = thumb_size + 70
+        header_height = 24  # minimal top padding (no modal header)
+        base_thumb = 120
+        scale = 1.22
+        thumb_size = int(round(base_thumb * scale))
+        card_w = int(round(thumb_size + 28 * scale))
+        card_h = int(round(thumb_size + 82 * scale))
 
         modal_width = padding + cols * (card_w + padding)
-        modal_width = min(WINDOW_WIDTH - 40, max(400, modal_width))
-        rows = max(1, (len(BACKGROUNDS) + cols - 1) // cols if BACKGROUNDS else 1)
+        # increase modal size x2 similar to previous sizing behavior
+        modal_width = min(WINDOW_WIDTH - 40, max(400, modal_width * 2))
+        total_items = len(BACKGROUNDS) if BACKGROUNDS else 0
+        pages = max(1, math.ceil(total_items / items_per_page))
         modal_height = header_height + rows * (card_h + padding) + padding
-        modal_height = min(WINDOW_HEIGHT - 40, max(340, modal_height))
+        # increase modal size x2
+        modal_height = min(WINDOW_HEIGHT - 40, max(340, modal_height * 2))
 
         modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
         modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
 
+        # Build only the first page of options by default (page 0)
+        # Small offset so cards appear slightly to the right and lower (user requested)
+        shift_x = 52
+        shift_y = 80
         options = []
-        for idx, bg in enumerate(BACKGROUNDS):
-            row = idx // cols
-            col = idx % cols
-            x = modal_rect.x + padding + col * (card_w + padding)
-            y = modal_rect.y + header_height + row * (card_h + padding)
+        start_idx = 0
+        end_idx = min(total_items, items_per_page)
+        for i, idx in enumerate(range(start_idx, end_idx)):
+            row = i // cols
+            col = i % cols
+            x = modal_rect.x + padding + col * (card_w + padding) + shift_x
+            # keep thumbnails above the bottom area reserved for the close button
+            y = modal_rect.y + header_height + row * (card_h + padding) + shift_y
             rect = pygame.Rect(x, y, card_w, card_h)
             thumb_x = rect.x + (rect.width - thumb_size) // 2
             thumb_rect = pygame.Rect(thumb_x, rect.y + 12, thumb_size, thumb_size)
-            options.append(
-                {
-                    "index": idx,
-                    "rect": rect,
-                    "thumb_rect": thumb_rect,
-                }
-            )
+            options.append({
+                "index": idx,
+                "rect": rect,
+                "thumb_rect": thumb_rect,
+            })
 
-        close_rect = pygame.Rect(modal_rect.right - 78, modal_rect.top + 16, 60, 26)
+        # Place the Back/Close button centered at the bottom of the modal
+        close_rect = pygame.Rect(0, 0, 100, 34)
+        bottom_y = modal_rect.bottom - max(40, int(modal_rect.height * 0.15))
+        close_rect.center = (modal_rect.centerx, bottom_y)
         return {
             "modal_rect": modal_rect,
             "options": options,
             "close_rect": close_rect,
             "thumb_size": thumb_size,
+            "pages": pages,
+            "current_page": 0,
         }
 
     # --- Side panel background helpers ---
@@ -1318,45 +1570,58 @@ def run_game():
         return name_map.get(lang) or name_map.get("en") or entry.get("key", "Side Panel")
 
     def build_side_panel_modal_layout():
-        cols = max(1, min(3, len(SIDE_PANEL_BACKGROUNDS) if SIDE_PANEL_BACKGROUNDS else 1))
+        # Match background modal: 4 columns x 2 rows per page, scaled cards
+        cols = 4
+        rows = 2
+        items_per_page = cols * rows
         padding = 20
-        header_height = 90
-        thumb_size = 120
-        card_w = thumb_size + 28
-        card_h = thumb_size + 70
+        header_height = 24
+        base_thumb = 120
+        scale = 1.22
+        thumb_size = int(round(base_thumb * scale))
+        card_w = int(round(thumb_size + 28 * scale))
+        card_h = int(round(thumb_size + 82 * scale))
 
         modal_width = padding + cols * (card_w + padding)
-        modal_width = min(WINDOW_WIDTH - 40, max(400, modal_width))
-        rows = max(1, (len(SIDE_PANEL_BACKGROUNDS) + cols - 1) // cols if SIDE_PANEL_BACKGROUNDS else 1)
+        modal_width = min(WINDOW_WIDTH - 40, max(400, modal_width * 2))
+        total_items = len(SIDE_PANEL_BACKGROUNDS) if SIDE_PANEL_BACKGROUNDS else 0
+        pages = max(1, math.ceil(total_items / items_per_page))
         modal_height = header_height + rows * (card_h + padding) + padding
-        modal_height = min(WINDOW_HEIGHT - 40, max(340, modal_height))
+        modal_height = min(WINDOW_HEIGHT - 40, max(340, modal_height * 2))
 
         modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
         modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
 
+        # Use same visual shifts as background modal
+        shift_x = 52
+        shift_y = 80
         options = []
-        for idx, bg in enumerate(SIDE_PANEL_BACKGROUNDS):
-            row = idx // cols
-            col = idx % cols
-            x = modal_rect.x + padding + col * (card_w + padding)
-            y = modal_rect.y + header_height + row * (card_h + padding)
+        start_idx = 0
+        end_idx = min(total_items, items_per_page)
+        for i, idx in enumerate(range(start_idx, end_idx)):
+            row = i // cols
+            col = i % cols
+            x = modal_rect.x + padding + col * (card_w + padding) + shift_x
+            y = modal_rect.y + header_height + row * (card_h + padding) + shift_y
             rect = pygame.Rect(x, y, card_w, card_h)
             thumb_x = rect.x + (rect.width - thumb_size) // 2
             thumb_rect = pygame.Rect(thumb_x, rect.y + 12, thumb_size, thumb_size)
-            options.append(
-                {
-                    "index": idx,
-                    "rect": rect,
-                    "thumb_rect": thumb_rect,
-                }
-            )
+            options.append({
+                "index": idx,
+                "rect": rect,
+                "thumb_rect": thumb_rect,
+            })
 
-        close_rect = pygame.Rect(modal_rect.right - 78, modal_rect.top + 16, 60, 26)
+        close_rect = pygame.Rect(0, 0, 100, 34)
+        bottom_y = modal_rect.bottom - max(40, int(modal_rect.height * 0.15))
+        close_rect.center = (modal_rect.centerx, bottom_y)
         return {
             "modal_rect": modal_rect,
             "options": options,
             "close_rect": close_rect,
             "thumb_size": thumb_size,
+            "pages": pages,
+            "current_page": 0,
         }
 
     def to_game_coords(pos):
@@ -1822,6 +2087,12 @@ def run_game():
                 window_mode_size = (event.w, event.h)
                 window_surface = pygame.display.get_surface()
                 recompute_render_scale()
+            elif event.type == MUSIC_END_EVENT:
+                # advance to next track in playlist
+                try:
+                    play_next_music()
+                except Exception:
+                    pass
             elif event.type == pygame.MOUSEMOTION:
                 mx, my, inside_game = to_game_coords(event.pos)
                 update_hover_preview(mx, my, inside_game)
@@ -1870,6 +2141,51 @@ def run_game():
                         if clicked_background is not None:
                             set_background_index(clicked_background)
                             background_modal_open = False
+                            continue
+                        continue
+                    else:
+                        continue
+
+                if music_modal_open:
+                    layout = build_music_modal_layout()
+                    if btn == 1:
+                        if not layout["modal_rect"].collidepoint(mx, my):
+                            music_modal_open = False
+                            continue
+                        if layout["close_rect"].collidepoint(mx, my):
+                            music_modal_open = False
+                            continue
+                        clicked_idx = None
+                        for opt in layout["options"]:
+                            if opt["rect"].collidepoint(mx, my):
+                                clicked_idx = opt["index"]
+                                break
+                        if clicked_idx is not None:
+                            # toggle membership in playlist
+                            chosen = layout["files"][clicked_idx]
+                            pl = getattr(settings, "music_playlist", []) or []
+                            if chosen in pl:
+                                try:
+                                    pl.remove(chosen)
+                                except Exception:
+                                    pass
+                            else:
+                                pl.append(chosen)
+                            try:
+                                settings.music_playlist = pl
+                            except Exception:
+                                pass
+                            save_settings(settings)
+                            try:
+                                if getattr(settings, "music_enabled", True) and getattr(settings, "music_playlist", []):
+                                    # restart playback using new playlist
+                                    current_music_index = 0
+                                    start_music_playback()
+                                else:
+                                    stop_music_playback()
+                            except Exception:
+                                pass
+                            # keep modal open for more selection
                             continue
                         continue
                     else:
@@ -2152,21 +2468,54 @@ def run_game():
                                 continue
                             if row["rect"].collidepoint(mx, my) or row["value_rect"].collidepoint(mx, my):
                                 # Special handling for slider-type row (log box transparency)
-                                if row.get("kind") == "slider" and row.get("key") == "log_box_transparency":
+                                if row.get("kind") == "slider":
                                     value_rect = row["value_rect"]
                                     slider_area = pygame.Rect(value_rect.x + 6, value_rect.y + 8, max(1, value_rect.width - 46), max(1, value_rect.height - 16))
                                     checkbox_rect = pygame.Rect(value_rect.right - 28, value_rect.centery - 8, 18, 18)
-                                    # Click on checkbox toggles enabling
-                                    if checkbox_rect.collidepoint(mx, my):
-                                        settings.log_box_transparency_enabled = not settings.log_box_transparency_enabled
+                                    enable_key = row.get("enable_key")
+                                    enabled = True
+                                    if enable_key:
+                                        enabled = bool(getattr(settings, enable_key, True))
+
+                                    # Click on checkbox toggles enabling (if provided)
+                                    if checkbox_rect.collidepoint(mx, my) and enable_key:
+                                        cur = bool(getattr(settings, enable_key, True))
+                                        try:
+                                            setattr(settings, enable_key, not cur)
+                                        except Exception:
+                                            pass
                                         save_settings(settings)
+                                        # update music playback state if we toggled music enable
+                                        try:
+                                            if enable_key == "music_enabled":
+                                                if getattr(settings, "music_enabled", True):
+                                                    start_music_playback()
+                                                else:
+                                                    stop_music_playback()
+                                        except Exception:
+                                            pass
                                     else:
                                         # Click on slider area sets value (only if enabled)
-                                        if settings.log_box_transparency_enabled and slider_area.collidepoint(mx, my):
+                                        if enabled and slider_area.collidepoint(mx, my):
                                             rel = (mx - slider_area.x) / float(max(1, slider_area.width))
-                                            v = int(max(0, min(1.0, rel)) * 255)
-                                            settings.log_box_transparency = v
+                                            max_v = int(row.get("max") or 100)
+                                            v = int(max(0, min(1.0, rel)) * max_v)
+                                            keyname = row.get("key")
+                                            if keyname:
+                                                try:
+                                                    setattr(settings, keyname, v)
+                                                except Exception:
+                                                    pass
                                             save_settings(settings)
+                                            try:
+                                                if keyname == "music_volume":
+                                                    vol = float(getattr(settings, "music_volume", 80)) / 100.0
+                                                    try:
+                                                        pygame.mixer.music.set_volume(max(0.0, min(1.0, vol)))
+                                                    except Exception:
+                                                        pass
+                                            except Exception:
+                                                pass
                                     row_clicked = True
                                     break
 
@@ -2176,6 +2525,8 @@ def run_game():
                                         background_modal_open = True
                                     elif key == "side_panel_background":
                                         side_panel_modal_open = True
+                                    elif key == "music":
+                                        music_modal_open = True
                                     settings_open_dropdown = None
                                 else:
                                     settings_open_dropdown = None if settings_open_dropdown == row["key"] else row["key"]
@@ -3155,9 +3506,13 @@ def run_game():
                     screen.blit(label_surf, label_rect)
 
                     value_rect = row["value_rect"]
-                    # Special rendering for the log box transparency slider + checkbox
-                    if row.get("kind") == "slider" and row.get("key") == "log_box_transparency":
-                        enabled = settings.log_box_transparency_enabled
+                    # Special rendering for slider rows (supports optional enable checkbox)
+                    if row.get("kind") == "slider":
+                        enable_key = row.get("enable_key")
+                        enabled = True
+                        if enable_key:
+                            enabled = bool(getattr(settings, enable_key, True))
+
                         slider_area = pygame.Rect(value_rect.x + 6, value_rect.y + 8, max(1, value_rect.width - 46), max(1, value_rect.height - 16))
                         checkbox_rect = pygame.Rect(value_rect.right - 28, value_rect.centery - 8, 18, 18)
 
@@ -3167,7 +3522,12 @@ def run_game():
                         pygame.draw.rect(screen, border_color, slider_area, 2, border_radius=6)
 
                         # Filled portion
-                        fill_w = int((settings.log_box_transparency / 255.0) * slider_area.width)
+                        max_v = int(row.get("max") or 100)
+                        cur_v = getattr(settings, row.get("key"), 0)
+                        try:
+                            fill_w = int((float(cur_v) / float(max_v)) * slider_area.width) if max_v > 0 else 0
+                        except Exception:
+                            fill_w = 0
                         fill_rect = pygame.Rect(slider_area.x, slider_area.y, fill_w, slider_area.height)
                         fill_col = (0, 110, 200) if enabled else (120, 120, 120)
                         pygame.draw.rect(screen, fill_col, fill_rect, border_radius=6)
@@ -3179,22 +3539,21 @@ def run_game():
                         pygame.draw.circle(screen, knob_color, knob_center, 7)
                         pygame.draw.circle(screen, border_color, knob_center, 7, 2)
 
-                        # Percentage text
-                        pct = int(settings.log_box_transparency / 255.0 * 100)
+                        # Percentage/text
+                        pct = int((float(cur_v) / float(max_v)) * 100) if max_v > 0 else 0
                         pct_surf = font_button.render(f"{pct}%", True, (0, 0, 0) if enabled else (90, 90, 90))
                         pct_rect = pct_surf.get_rect(midleft=(slider_area.right + 6, slider_area.centery))
                         screen.blit(pct_surf, pct_rect)
 
-                        # Checkbox to enable/disable
-                        pygame.draw.rect(screen, (255, 255, 255), checkbox_rect, border_radius=4)
-                        pygame.draw.rect(screen, border_color, checkbox_rect, 2, border_radius=4)
-                        if enabled:
-                            # draw check mark
-                            cx = checkbox_rect.centerx
-                            cy = checkbox_rect.centery
-                            pygame.draw.line(screen, (20, 120, 20), (checkbox_rect.left + 4, cy), (cx - 1, checkbox_rect.bottom - 5), 3)
-                            pygame.draw.line(screen, (20, 120, 20), (cx - 1, checkbox_rect.bottom - 5), (checkbox_rect.right - 4, checkbox_rect.top + 4), 3)
-
+                        # Checkbox to enable/disable (if present)
+                        if enable_key:
+                            pygame.draw.rect(screen, (255, 255, 255), checkbox_rect, border_radius=4)
+                            pygame.draw.rect(screen, border_color, checkbox_rect, 2, border_radius=4)
+                            if enabled:
+                                cx = checkbox_rect.centerx
+                                cy = checkbox_rect.centery
+                                pygame.draw.line(screen, (20, 120, 20), (checkbox_rect.left + 4, cy), (cx - 1, checkbox_rect.bottom - 5), 3)
+                                pygame.draw.line(screen, (20, 120, 20), (cx - 1, checkbox_rect.bottom - 5), (checkbox_rect.right - 4, checkbox_rect.top + 4), 3)
                     else:
                         value_color = (230, 230, 230) if row["enabled"] else (150, 150, 150)
                         pygame.draw.rect(screen, value_color, value_rect, border_radius=6)
@@ -3204,7 +3563,7 @@ def run_game():
                         text_x = value_rect.x + 10
                         if row.get("key") == "language":
                             # choose a sensible flag size based on row height
-                            fh = max(12, value_rect.height - 12)
+                            fh = max(12, value_rect.height - 8)
                             fw = int(round(fh * 1.6))
                             flag_surf = load_flag_for_language(row.get("value"), (fw, fh))
                             if flag_surf:
@@ -3227,10 +3586,16 @@ def run_game():
                             arrow_pts = [(arrow_x - 6, arrow_y - 3), (arrow_x + 6, arrow_y - 3), (arrow_x, arrow_y + 5)]
                         pygame.draw.polygon(screen, (0, 0, 0), arrow_pts)
 
+                # detect mouse and apply hover effect on options
+                mx, my, _inside = to_game_coords(pygame.mouse.get_pos())
                 for opt in layout["options"]:
-                    bg = (225, 225, 225)
-                    if opt["selected"]:
+                    hovered = opt["rect"].collidepoint(mx, my)
+                    if hovered:
+                        bg = (180, 200, 255)
+                    elif opt["selected"]:
                         bg = (200, 220, 255)
+                    else:
+                        bg = (225, 225, 225)
                     pygame.draw.rect(screen, bg, opt["rect"], border_radius=6)
                     pygame.draw.rect(screen, (60, 60, 60), opt["rect"], 1, border_radius=6)
                     # Draw flag for language options when available
@@ -3328,19 +3693,17 @@ def run_game():
             layout = build_background_modal_layout()
             modal_rect = layout["modal_rect"]
 
-            pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            modal_bg_surf = load_modal_bg_surface(modal_rect.size)
+            if modal_bg_surf is not None:
+                try:
+                    screen.blit(modal_bg_surf, modal_rect.topleft)
+                except Exception:
+                    pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            else:
+                pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
             pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=12)
 
-            title_text = t(settings, "background_modal_title")
-            subtitle_text = t(settings, "background_modal_subtitle")
-
-            title_surf = font_title.render(title_text, True, (25, 25, 25))
-            title_rect = title_surf.get_rect(midtop=(modal_rect.centerx, modal_rect.top + 16))
-            screen.blit(title_surf, title_rect)
-
-            subtitle_surf = font_text.render(subtitle_text, True, (60, 60, 60))
-            subtitle_rect = subtitle_surf.get_rect(midtop=(modal_rect.centerx, title_rect.bottom + 6))
-            screen.blit(subtitle_surf, subtitle_rect)
+            # Modal header removed: no title/subtitle rendered for this modal
 
             close_rect = layout["close_rect"]
             pygame.draw.rect(screen, (225, 225, 225), close_rect, border_radius=6)
@@ -3365,9 +3728,14 @@ def run_game():
                     screen.blit(thumb, thumb_rect)
 
                 name_text = background_label(opt["index"])
-                name_surf = font_button.render(name_text, True, (25, 25, 25))
-                name_rect = name_surf.get_rect(midtop=(rect.centerx, thumb_rect.bottom + 8))
-                screen.blit(name_surf, name_rect)
+                # wrap/ellipsize to avoid clipping through card
+                max_w = rect.width - 12
+                lines = _wrap_label_lines(name_text, font_button, max_w, max_lines=2)
+                line_h = font_button.get_linesize()
+                for i, ln in enumerate(lines):
+                    surf_ln = font_button.render(ln, True, (25, 25, 25))
+                    surf_rect = surf_ln.get_rect(midtop=(rect.centerx, thumb_rect.bottom + 6 + i * line_h))
+                    screen.blit(surf_ln, surf_rect)
         # Side panel modal rendering
         if side_panel_modal_open and SIDE_PANEL_BACKGROUNDS:
             overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -3377,19 +3745,17 @@ def run_game():
             layout = build_side_panel_modal_layout()
             modal_rect = layout["modal_rect"]
 
-            pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            modal_bg_surf = load_modal_bg_surface(modal_rect.size)
+            if modal_bg_surf is not None:
+                try:
+                    screen.blit(modal_bg_surf, modal_rect.topleft)
+                except Exception:
+                    pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            else:
+                pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
             pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=12)
 
-            title_text = t(settings, "side_panel_modal_title")
-            subtitle_text = t(settings, "side_panel_modal_subtitle")
-
-            title_surf = font_title.render(title_text, True, (25, 25, 25))
-            title_rect = title_surf.get_rect(midtop=(modal_rect.centerx, modal_rect.top + 16))
-            screen.blit(title_surf, title_rect)
-
-            subtitle_surf = font_text.render(subtitle_text, True, (60, 60, 60))
-            subtitle_rect = subtitle_surf.get_rect(midtop=(modal_rect.centerx, title_rect.bottom + 6))
-            screen.blit(subtitle_surf, subtitle_rect)
+            # Modal header removed: no title/subtitle rendered for this modal
 
             close_rect = layout["close_rect"]
             pygame.draw.rect(screen, (225, 225, 225), close_rect, border_radius=6)
@@ -3414,9 +3780,67 @@ def run_game():
                     screen.blit(thumb, thumb_rect)
 
                 name_text = side_panel_label(opt["index"])
-                name_surf = font_button.render(name_text, True, (25, 25, 25))
-                name_rect = name_surf.get_rect(midtop=(rect.centerx, thumb_rect.bottom + 8))
-                screen.blit(name_surf, name_rect)
+                max_w = rect.width - 12
+                lines = _wrap_label_lines(name_text, font_button, max_w, max_lines=2)
+                line_h = font_button.get_linesize()
+                for i, ln in enumerate(lines):
+                    surf_ln = font_button.render(ln, True, (25, 25, 25))
+                    surf_rect = surf_ln.get_rect(midtop=(rect.centerx, thumb_rect.bottom + 6 + i * line_h))
+                    screen.blit(surf_ln, surf_rect)
+        # Music modal rendering
+        if music_modal_open:
+            overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 170))
+            screen.blit(overlay, (0, 0))
+
+            layout = build_music_modal_layout()
+            modal_rect = layout["modal_rect"]
+
+            modal_bg_surf = load_modal_bg_surface(modal_rect.size)
+            if modal_bg_surf is not None:
+                try:
+                    screen.blit(modal_bg_surf, modal_rect.topleft)
+                except Exception:
+                    pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            else:
+                pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=12)
+
+            close_rect = layout["close_rect"]
+            pygame.draw.rect(screen, (225, 225, 225), close_rect, border_radius=6)
+            pygame.draw.rect(screen, (90, 90, 90), close_rect, 1, border_radius=6)
+            close_label = lang_text.get("btn_back", "Back")
+            close_surf = font_button.render(close_label, True, (20, 20, 20))
+            close_surf_rect = close_surf.get_rect(center=close_rect.center)
+            screen.blit(close_surf, close_surf_rect)
+
+            # Draw list of files with checkboxes
+            playlist = getattr(settings, "music_playlist", []) or []
+            for opt in layout["options"]:
+                rect = opt["rect"]
+                fname = opt.get("file", "")
+                is_selected = fname in playlist
+                bg = (235, 235, 235) if is_selected else (220, 220, 220)
+                pygame.draw.rect(screen, bg, rect, border_radius=6)
+                pygame.draw.rect(screen, (90, 90, 90), rect, 1, border_radius=6)
+
+                # checkbox (smaller width and positioned lower in the row)
+                cb_size = max(10, min(16, rect.height - 14))
+                cb_x = rect.x + 8
+                cb_y = rect.y + rect.height - cb_size - 6
+                cb_rect = pygame.Rect(cb_x, cb_y, cb_size, cb_size)
+                pygame.draw.rect(screen, (255, 255, 255), cb_rect, border_radius=4)
+                pygame.draw.rect(screen, (80, 80, 80), cb_rect, 1, border_radius=4)
+                if is_selected:
+                    cx = cb_rect.centerx
+                    cy = cb_rect.centery
+                    pygame.draw.line(screen, (20, 120, 20), (cb_rect.left + 4, cy), (cx - 1, cb_rect.bottom - 5), 3)
+                    pygame.draw.line(screen, (20, 120, 20), (cx - 1, cb_rect.bottom - 5), (cb_rect.right - 4, cb_rect.top + 4), 3)
+
+                # filename text
+                txt_surf = font_button.render(fname, True, (10, 10, 10))
+                txt_rect = txt_surf.get_rect(midleft=(cb_rect.right + 8, rect.centery))
+                screen.blit(txt_surf, txt_rect)
         # Timer modal rendering
         if timer_modal_open and can_change_timer():
             overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
@@ -3426,18 +3850,28 @@ def run_game():
             layout = build_timer_modal_layout()
             modal_rect = layout["modal_rect"]
 
-            pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            modal_bg_surf = load_modal_bg_surface(modal_rect.size)
+            if modal_bg_surf is not None:
+                try:
+                    screen.blit(modal_bg_surf, modal_rect.topleft)
+                except Exception:
+                    pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            else:
+                pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
             pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=12)
 
             title_text = lang_text.get("timer_modal_title", "Match timer")
             subtitle_text = lang_text.get("timer_modal_subtitle", "Choose how much time each side gets")
 
             title_surf = font_title.render(title_text, True, (25, 25, 25))
-            title_rect = title_surf.get_rect(midtop=(modal_rect.centerx, modal_rect.top + 16))
+            # move the title lower inside the enlarged modal using configurable factor
+            title_y = modal_rect.top + max(40, int(modal_rect.height * TIMER_MODAL_TITLE_Y_FACTOR))
+            title_rect = title_surf.get_rect(midtop=(modal_rect.centerx, title_y))
             screen.blit(title_surf, title_rect)
 
             subtitle_surf = font_text.render(subtitle_text, True, (60, 60, 60))
-            subtitle_rect = subtitle_surf.get_rect(midtop=(modal_rect.centerx, title_rect.bottom + 6))
+            # keep subtitle just below the title using configurable spacing
+            subtitle_rect = subtitle_surf.get_rect(midtop=(modal_rect.centerx, title_rect.bottom + TIMER_MODAL_SUBTITLE_SPACING))
             screen.blit(subtitle_surf, subtitle_rect)
 
             close_rect = layout["close_rect"]

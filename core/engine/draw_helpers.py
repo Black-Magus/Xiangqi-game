@@ -390,7 +390,8 @@ def _draw_timer_for_caption(surface, font_timer, caption_info, timer_text):
     name_rect = caption_info["name_rect"]
     align_left = caption_info.get("align_left", False)
 
-    timer_surf = font_timer.render(timer_text, True, (0, 0, 0))
+    # Render timer text in white (will draw shadow behind it)
+    timer_surf = font_timer.render(timer_text, True, (255, 255, 255))
     if timer_text == "∞":
         scale = 1.35
         timer_w, timer_h = timer_surf.get_size()
@@ -407,15 +408,31 @@ def _draw_timer_for_caption(surface, font_timer, caption_info, timer_text):
     timer_y = name_rect.y - (box_height - font_timer.get_height()) // 2
 
     box_rect = pygame.Rect(timer_x, timer_y, box_width, box_height)
-    pygame.draw.rect(surface, (255, 255, 255), box_rect, border_radius=6)
-    pygame.draw.rect(surface, (50, 50, 50), box_rect, 1, border_radius=6)
+    # Draw translucent dark background with slight rounding.
+    # Use an intermediate surface to preserve per-pixel alpha.
+    box_surf = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
+    # Slightly translucent dark background: rgba(45,47,60,200)
+    pygame.draw.rect(box_surf, (45, 47, 60, 200), pygame.Rect(0, 0, box_width, box_height), border_radius=8)
+    # subtle light border (very translucent)
+    pygame.draw.rect(box_surf, (255, 255, 255, 20), pygame.Rect(0, 0, box_width, box_height), 1, border_radius=8)
+    surface.blit(box_surf, box_rect.topleft)
 
     timer_width, timer_height = timer_surf.get_size()
     text_x = box_rect.centerx - timer_width // 2
     text_y = box_rect.centery - timer_height // 2
-    shadow = font_timer.render(timer_text, True, (0, 0, 0))
-    surface.blit(shadow, (text_x + 1, text_y + 1))
-    surface.blit(timer_surf, (text_x, text_y))
+    # If the timer is the infinity symbol, avoid drawing the small black shadow
+    # (it appears as a second smaller symbol). Also nudge the white symbol slightly upward
+    # for better visual balance.
+    if timer_text == "∞":
+        text_y = text_y - max(2, timer_height // 10)
+        # Foreground (white) only
+        surface.blit(timer_surf, (text_x, text_y))
+    else:
+        # Shadow for legibility
+        shadow = font_timer.render(timer_text, True, (0, 0, 0))
+        surface.blit(shadow, (text_x + 1, text_y + 1))
+        # Foreground (white)
+        surface.blit(timer_surf, (text_x, text_y))
     return box_rect
 
 

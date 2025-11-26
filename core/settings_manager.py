@@ -23,6 +23,13 @@ class Settings:
         # log box transparency settings (0..255). If disabled, the log box is opaque.
         self.log_box_transparency_enabled = True
         self.log_box_transparency = 200
+        # Music/audio settings
+        # Master music enabled (mute/unmute)
+        self.music_enabled = True
+        # Music volume (0..100)
+        self.music_volume = 80
+        # Playlist: list of filenames under `assets/bgm` to play/loop
+        self.music_playlist = []
 
 
 
@@ -48,6 +55,9 @@ def settings_to_dict(settings: Settings) -> Dict[str, Any]:
         "side_panel_background_index": settings.side_panel_background_index,
         "log_box_transparency_enabled": settings.log_box_transparency_enabled,
         "log_box_transparency": settings.log_box_transparency,
+        "music_enabled": settings.music_enabled,
+        "music_volume": settings.music_volume,
+        "music_playlist": settings.music_playlist,
     }
 
 
@@ -122,6 +132,22 @@ def load_settings() -> Settings:
                 s.log_box_transparency = max(0, min(255, v))
             except Exception:
                 s.log_box_transparency = 200
+        if "music_enabled" in data:
+            try:
+                s.music_enabled = bool(data.get("music_enabled", True))
+            except Exception:
+                s.music_enabled = True
+        if "music_volume" in data:
+            try:
+                mv = int(data.get("music_volume", 80))
+                s.music_volume = max(0, min(100, mv))
+            except Exception:
+                s.music_volume = 80
+        if "music_playlist" in data and isinstance(data.get("music_playlist"), list):
+            try:
+                s.music_playlist = [str(x) for x in data.get("music_playlist")]
+            except Exception:
+                s.music_playlist = []
 
     return s
 
