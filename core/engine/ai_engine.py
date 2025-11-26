@@ -82,12 +82,6 @@ AI_LEVELS = [
 
 
 def _evaluate_piece_positional(p, c, r) -> int:
-    """
-    Trả về bonus vị trí cho quân p tại c, r
-    Bonus là từ góc nhìn của chính quân đó
-    Sau đó hàm evaluate_board sẽ cộng cho ai_side và trừ cho đối thủ
-    Giả định: Red ở phía dưới (r lớn), Black ở phía trên (r nhỏ)
-    """
     bonus = 0
 
     if p.ptype == PieceType.SOLDIER:
@@ -138,10 +132,6 @@ def _evaluate_piece_positional(p, c, r) -> int:
 
 
 def evaluate_board(board: Board, ai_side: Side) -> int:
-    """
-    Đánh giá bàn cờ từ góc nhìn ai_side.
-    Dựa trên vật chất + một số heuristic vị trí đơn giản.
-    """
     score = 0
 
     for r in range(BOARD_ROWS):
@@ -178,13 +168,6 @@ def generate_all_legal_moves(board: Board, side: Side):
 
 
 def _move_sort_key(mv: Move, ai_side: Side) -> int:
-    """
-    Heuristic sắp xếp nước đi để alpha-beta cắt tỉa tốt hơn.
-    Ưu tiên:
-      - ăn quân giá trị lớn
-      - binh tiến lên
-      - quân mạnh đi vào trung tâm
-    """
     score = 0
 
     if mv.captured is not None:
@@ -224,10 +207,8 @@ def minimax_search(board: Board,
     moves = generate_all_legal_moves(board, current_side)
     if not moves:
         if board.is_in_check(current_side):
-            # Chiếu hết
             return -100000 if current_side == ai_side else 100000
         else:
-            # Hòa
             return 0
 
     moves.sort(key=lambda mv: _move_sort_key(mv, ai_side), reverse=True)
@@ -289,7 +270,6 @@ def choose_ai_move(board: Board, level_cfg, side: Side):
     randomness = level_cfg["randomness"]
     eval_noise = level_cfg.get("eval_noise", 0.0)
 
-    # Với level thấp có khả năng đi hoàn toàn random
     if randomness > 0 and random.random() < randomness:
         return random.choice(moves)
 

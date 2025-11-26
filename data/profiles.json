@@ -10,29 +10,29 @@
       },
       "stats": {
         "overall": {
-          "games": 287,
-          "wins": 100,
-          "losses": 186,
+          "games": 292,
+          "wins": 103,
+          "losses": 188,
           "draws": 1
         },
         "vs_ai": {
-          "games": 154,
-          "wins": 34,
-          "losses": 120,
+          "games": 158,
+          "wins": 37,
+          "losses": 121,
           "draws": 0
         },
         "vs_human": {
-          "games": 133,
+          "games": 134,
           "wins": 66,
-          "losses": 66,
+          "losses": 67,
           "draws": 1
         }
       },
-      "elo": 945
+      "elo": 956
     },
     {
       "id": "p2",
-      "display_name": "Guest",
+      "display_name": "Triển Chill",
       "avatar": {
         "type": "image",
         "color": [
@@ -41,12 +41,12 @@
           220
         ],
         "symbol": "G",
-        "path": "user_avatar_1764215758.jpg"
+        "path": "user_avatar_1764259291.jpg"
       },
       "stats": {
         "overall": {
-          "games": 134,
-          "wins": 66,
+          "games": 135,
+          "wins": 67,
           "losses": 68,
           "draws": 0
         },
@@ -57,19 +57,19 @@
           "draws": 0
         },
         "vs_human": {
-          "games": 134,
-          "wins": 66,
+          "games": 135,
+          "wins": 67,
           "losses": 68,
           "draws": 0
         }
       },
-      "elo": 1059
+      "elo": 1070
     }
   ],
   "last_selected": {
     "pvp": {
-      "red_player_id": "p2",
-      "black_player_id": "p1"
+      "red_player_id": "p1",
+      "black_player_id": "p2"
     },
     "ai": {
       "human_player_id": "p1"

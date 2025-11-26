@@ -16,7 +16,7 @@ from core.engine.board import Board
 from core.engine.types import Side, Move, PieceType
 
 from data.localisation import TEXT, PIECE_BODY_THEMES, PIECE_SYMBOL_SETS, t, FONT_BY_LANGUAGE
-from data.themes import BOARD_THEMES
+from data.themes import BOARD_THEMES, default_piece_theme
 from data.backgrounds import BACKGROUNDS
 from data.side_panel_backgrounds import SIDE_PANEL_BACKGROUNDS
 from core.settings_manager import Settings, load_settings, save_settings
@@ -702,6 +702,15 @@ def run_game():
                 "options": language_options,
                 "enabled": True,
             },
+            "piece_animation": {
+                "label": t(settings, "settings_label_piece_animation"),
+                "value": bool(getattr(settings, "piece_animation", True)),
+                "options": [
+                    {"value": True, "text": t(settings, "settings_option_on")},
+                    {"value": False, "text": t(settings, "settings_option_off")},
+                ],
+                "enabled": True,
+            },
         }
 
         for key, item in items.items():
@@ -753,7 +762,7 @@ def run_game():
 
         section_map = {
             "general": [("general", t(settings, "settings_section_general"), ["language"])],
-            "gameplay": [("gameplay", t(settings, "settings_section_gameplay"), [])],
+            "gameplay": [("gameplay", t(settings, "settings_section_gameplay"), ["piece_animation"])],
             "appearance": [
                 ("appearance", t(settings, "settings_section_appearance"), ["side_panel_background", "log_box_transparency", "background", "board_theme", "piece_body", "piece_symbols"])
             ],
@@ -821,6 +830,11 @@ def run_game():
             settings.background_index = int(value) % len(BACKGROUNDS)
         elif key == "piece_body" and PIECE_BODY_THEMES:
             settings.piece_body_theme_index = int(value) % len(PIECE_BODY_THEMES)
+        elif key == "piece_animation":
+            try:
+                settings.piece_animation = bool(value)
+            except Exception:
+                settings.piece_animation = True
         elif key == "piece_symbols" and PIECE_SYMBOL_SETS:
             settings.piece_symbol_set_index = int(value) % len(PIECE_SYMBOL_SETS)
         elif key == "side_panel_background" and SIDE_PANEL_BACKGROUNDS:
@@ -1641,6 +1655,38 @@ def run_game():
         register_result_if_needed(winner_side, False)
         replay_index = len(move_history)
 
+    def start_move_animation(mv):
+        """Begin a short visual animation for the given Move object."""
+        try:
+            if mv is None:
+                return
+            duration = 0.2
+            start = pygame.time.get_ticks()
+            size = int(CELL_SIZE * 0.9)
+            sprite = None
+            try:
+                sprite = get_piece_sprite(mv.piece, settings, size)
+            except Exception:
+                sprite = None
+            animations.append({
+                "piece": mv.piece,
+                "from": mv.from_pos,
+                "to": mv.to_pos,
+                "start": start,
+                "duration": duration,
+                "sprite": sprite,
+            })
+        except Exception:
+            return
+
+    def move_piece_with_animation(mv, animate: bool = True):
+        """Apply the move to the board and optionally start a visual animation."""
+        # always apply the move so game logic (checks, timers, history) proceeds
+        board.move_piece(mv)
+        # but start a visual animation only if enabled in settings and requested
+        if animate and getattr(settings, "piece_animation", True):
+            start_move_animation(mv)
+
     def ai_make_move():
         nonlocal current_side, move_history, redo_stack, game_over, winner
         nonlocal in_check_side, selected, valid_moves, hovered_move
@@ -2243,7 +2289,7 @@ def run_game():
                                         moving_piece = board.get_piece(sel_c, sel_r)
                                         captured = board.get_piece(col, row)
                                         mv = Move((sel_c, sel_r), (col, row), moving_piece, captured)
-                                        board.move_piece(mv)
+                                        move_piece_with_animation(mv)
                                         move_history.append(mv)
                                         redo_stack.clear()
                                         log_follow_latest = True
@@ -2461,17 +2507,87 @@ def run_game():
                 c_from, r_from = last_origin["pos"]
                 draw_move_origin(screen, c_from, r_from, last_origin["color"])
 
+            now_ticks = pygame.time.get_ticks()
             for r in range(BOARD_ROWS):
                 for c in range(BOARD_COLS):
                     piece = board.get_piece(c, r)
                     if piece is not None:
-                        from core.engine.draw_helpers import draw_piece  
+                        from core.engine.draw_helpers import draw_piece
+                        # If this piece is currently the target/destination of an active
+                        # animation, skip drawing it here as we'll render an animated
+                        # sprite on top of the board instead.
+                        skip_draw = False
+                        for anim in animations:
+                            if anim.get("piece") is piece and anim.get("to") == (c, r):
+                                elapsed = (now_ticks - anim.get("start", 0)) / 1000.0
+                                if elapsed < anim.get("duration", 0.5):
+                                    skip_draw = True
+                                    break
+                        if skip_draw:
+                            continue
+
                         highlight_color = None
                         if last_highlight and last_highlight["pos"] == (c, r):
                             highlight_color = last_highlight["color"]
                         if (c, r) in capturable_targets:
                             highlight_color = (255, 215, 0)
                         draw_piece(screen, piece, c, r, font_piece, settings, highlight_color=highlight_color)
+
+            # Draw active move animations on top of board pieces
+            if animations:
+                # iterate a copy because we may remove finished animations
+                now = pygame.time.get_ticks()
+                for anim in animations[:]:
+                    start = anim.get("start", now)
+                    duration = anim.get("duration", 0.5)
+                    elapsed = (now - start) / 1000.0
+                    progress = max(0.0, min(1.0, elapsed / float(duration) if duration > 0 else 1.0))
+                    fx, fy = board_to_screen(*anim.get("from"))
+                    tx, ty = board_to_screen(*anim.get("to"))
+                    cx = int(round(fx + (tx - fx) * progress))
+                    cy = int(round(fy + (ty - fy) * progress))
+
+                    spr = anim.get("sprite")
+                    if spr is not None:
+                        rect = spr.get_rect(center=(cx, cy))
+                        screen.blit(spr, rect)
+                    else:
+                        # fallback: draw a simple circle and piece text like draw_piece fallback
+                        try:
+                            from core.engine.draw_helpers import default_piece_theme
+                            theme = default_piece_theme()
+                            color = theme["red_color"] if anim["piece"].side == Side.RED else theme["black_color"]
+                            radius = CELL_SIZE // 2 - 4
+                            pygame.draw.circle(screen, (245, 230, 200), (cx, cy), radius)
+                            pygame.draw.circle(screen, color, (cx, cy), radius, 2)
+                            # piece char
+                            p = anim["piece"].ptype
+                            if p == PieceType.GENERAL:
+                                text = "帥" if anim["piece"].side == Side.RED else "將"
+                            elif p == PieceType.ADVISOR:
+                                text = "仕" if anim["piece"].side == Side.RED else "士"
+                            elif p == PieceType.ELEPHANT:
+                                text = "相" if anim["piece"].side == Side.RED else "象"
+                            elif p == PieceType.HORSE:
+                                text = "傌" if anim["piece"].side == Side.RED else "馬"
+                            elif p == PieceType.ROOK:
+                                text = "俥" if anim["piece"].side == Side.RED else "車"
+                            elif p == PieceType.CANNON:
+                                text = "炮" if anim["piece"].side == Side.RED else "砲"
+                            else:
+                                text = "兵" if anim["piece"].side == Side.RED else "卒"
+                            txt = font_piece.render(text, True, color)
+                            tr = txt.get_rect(center=(cx, cy))
+                            screen.blit(txt, tr)
+                        except Exception:
+                            pass
+
+                    # remove finished animations
+                    if progress >= 1.0:
+                        try:
+                            animations.remove(anim)
+                        except Exception:
+                            pass
 
             if hovered_move and selected is not None:
                 sel_piece = board.get_piece(*selected)
