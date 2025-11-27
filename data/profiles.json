@@ -10,25 +10,25 @@
       },
       "stats": {
         "overall": {
-          "games": 312,
-          "wins": 112,
-          "losses": 199,
+          "games": 316,
+          "wins": 113,
+          "losses": 202,
           "draws": 1
         },
         "vs_ai": {
-          "games": 174,
+          "games": 175,
           "wins": 44,
-          "losses": 130,
+          "losses": 131,
           "draws": 0
         },
         "vs_human": {
-          "games": 138,
-          "wins": 68,
-          "losses": 69,
+          "games": 141,
+          "wins": 69,
+          "losses": 71,
           "draws": 1
         }
       },
-      "elo": 970
+      "elo": 954
     },
     {
       "id": "p2",
@@ -45,9 +45,9 @@
       },
       "stats": {
         "overall": {
-          "games": 139,
-          "wins": 69,
-          "losses": 70,
+          "games": 142,
+          "wins": 71,
+          "losses": 71,
           "draws": 0
         },
         "vs_ai": {
@@ -57,13 +57,13 @@
           "draws": 0
         },
         "vs_human": {
-          "games": 139,
-          "wins": 69,
-          "losses": 70,
+          "games": 142,
+          "wins": 71,
+          "losses": 71,
           "draws": 0
         }
       },
-      "elo": 1061
+      "elo": 1062
     }
   ],
   "last_selected": {

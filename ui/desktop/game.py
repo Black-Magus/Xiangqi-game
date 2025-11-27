@@ -85,6 +85,51 @@ def run_game():
 
     refresh_bgm_files()
 
+    # --- Sound effects (SFX) support ---
+    move_sfx = None
+    death_sfx = None
+
+    def _load_sfx_file(name: str):
+        try:
+            full = os.path.join(ASSETS_DIR, "sfx", name)
+            if os.path.exists(full):
+                try:
+                    return pygame.mixer.Sound(full)
+                except Exception:
+                    return None
+        except Exception:
+            pass
+        return None
+
+    try:
+        move_sfx = _load_sfx_file("move.mp3")
+    except Exception:
+        move_sfx = None
+    try:
+        death_sfx = _load_sfx_file("death.mp3")
+    except Exception:
+        death_sfx = None
+
+    def play_move_sfx():
+        try:
+            if not getattr(settings, "move_sfx_enabled", True):
+                return
+            if move_sfx is None:
+                return
+            move_sfx.play()
+        except Exception:
+            pass
+
+    def play_death_sfx():
+        try:
+            if not getattr(settings, "death_sfx_enabled", True):
+                return
+            if death_sfx is None:
+                return
+            death_sfx.play()
+        except Exception:
+            pass
+
     def stop_music_playback():
         nonlocal music_playing
         try:
@@ -469,6 +514,10 @@ def run_game():
     MENU_BACKGROUND_PATH = os.path.join(ASSETS_DIR, "menu", "main_menu.jpg")
     menu_background_image_cache = {}
     menu_background_scaled_cache = {}
+    # Main menu title images (use localized variant for Vietnamese)
+    MENU_TITLE_PATH = os.path.join(ASSETS_DIR, "menu", "xianggi.png")
+    MENU_TITLE_VI_PATH = os.path.join(ASSETS_DIR, "menu", "xiangqi_vi.png")
+    MENU_TITLE_SCALED_CACHE = {}
     MENU_CORNER_RADIUS = 18
     # Pause menu image (animated uncrop)
     PAUSE_MENU_PATH = os.path.join(ASSETS_DIR, "menu", "pause_menu.png")
@@ -889,6 +938,24 @@ def run_game():
                 ))(),
                 "keep_selected_label": True,
             },
+            "move_sfx_enabled": {
+                "label": t(settings, "settings_label_move_sfx"),
+                "value": bool(getattr(settings, "move_sfx_enabled", True)),
+                "options": [
+                    {"value": True, "text": t(settings, "settings_option_on")},
+                    {"value": False, "text": t(settings, "settings_option_off")},
+                ],
+                "enabled": True,
+            },
+            "death_sfx_enabled": {
+                "label": t(settings, "settings_label_death_sfx"),
+                "value": bool(getattr(settings, "death_sfx_enabled", True)),
+                "options": [
+                    {"value": True, "text": t(settings, "settings_option_on")},
+                    {"value": False, "text": t(settings, "settings_option_off")},
+                ],
+                "enabled": True,
+            },
         }
 
         for key, item in items.items():
@@ -948,7 +1015,7 @@ def run_game():
                 ("appearance", t(settings, "settings_section_appearance"), ["side_panel_background", "log_box_transparency", "background", "board_theme", "piece_body", "piece_symbols"])
             ],
             "display": [("display", t(settings, "settings_section_display"), ["display_mode", "resolution"])],
-            "audio": [("audio", t(settings, "settings_section_audio"), ["music_volume", "music"])],
+            "audio": [("audio", t(settings, "settings_section_audio"), ["music_volume", "music", "move_sfx_enabled", "death_sfx_enabled"])],
         }
 
         sections = section_map.get(category, section_map["general"])
@@ -1799,6 +1866,11 @@ def run_game():
         loss_badge_side = loser_side
         loss_badge_anim_start = pygame.time.get_ticks()
         start_slash_animation(loser_side, last_move)
+        # Play death/lose SFX
+        try:
+            play_death_sfx()
+        except Exception:
+            pass
 
     def loss_badge_scale_for(loser_side):
         if loser_side not in (Side.RED, Side.BLACK):
@@ -2032,6 +2104,12 @@ def run_game():
             selected = None
             valid_moves = []
             hovered_move = None
+
+            # Play move SFX when a move is applied
+            try:
+                play_move_sfx()
+            except Exception:
+                pass
 
             current_side = human_side
             update_game_state_after_side_change()
@@ -2555,7 +2633,17 @@ def run_game():
                                         music_modal_open = True
                                     settings_open_dropdown = None
                                 else:
-                                    settings_open_dropdown = None if settings_open_dropdown == row["key"] else row["key"]
+                                    # Immediate toggle for simple checkbox-style options
+                                    if row.get("key") in ("move_sfx_enabled", "death_sfx_enabled"):
+                                        rk = row.get("key")
+                                        cur = bool(getattr(settings, rk, True))
+                                        try:
+                                            setattr(settings, rk, not cur)
+                                        except Exception:
+                                            pass
+                                        save_settings(settings)
+                                    else:
+                                        settings_open_dropdown = None if settings_open_dropdown == row["key"] else row["key"]
                                 row_clicked = True
                                 break
                         if row_clicked:
@@ -2736,6 +2824,10 @@ def run_game():
 
                                         current_side = Side.BLACK if current_side == Side.RED else Side.RED
                                         update_game_state_after_side_change()
+                                        try:
+                                            play_move_sfx()
+                                        except Exception:
+                                            pass
                                     selected = None
                                     valid_moves = []
                                     hovered_move = None
@@ -2788,13 +2880,28 @@ def run_game():
                 screen.blit(band_surface, band_rect.topleft)
             pygame.draw.rect(screen, (80, 60, 40), band_rect, 2, border_radius=band_radius)
 
-            title_surf = font_title.render(lang_text["title"], True, (40, 30, 25))
-            title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, start_y - 80))
-            screen.blit(title_surf, title_rect)
-
-            sub_surf = font_text.render(lang_text["subtitle"], True, (60, 50, 45))
-            sub_rect = sub_surf.get_rect(center=(WINDOW_WIDTH // 2, start_y - 52))
-            screen.blit(sub_surf, sub_rect)
+            # Title image (use Vietnamese variant when language is 'vi')
+            title_img = MENU_TITLE_SCALED_CACHE.get(lang)
+            if title_img is None:
+                try:
+                    title_path = MENU_TITLE_VI_PATH if lang == 'vi' else MENU_TITLE_PATH
+                    img = pygame.image.load(title_path).convert_alpha()
+                    max_w = 230
+                    w, h = img.get_size()
+                    if w > max_w:
+                        scale = max_w / w
+                        img = pygame.transform.smoothscale(img, (int(w * scale), int(h * scale)))
+                    MENU_TITLE_SCALED_CACHE[lang] = img
+                    title_img = img
+                except Exception:
+                    title_img = None
+            if title_img:
+                title_rect = title_img.get_rect(center=(WINDOW_WIDTH // 2, start_y - 80))
+                screen.blit(title_img, title_rect)
+            else:
+                title_surf = font_title.render(lang_text["title"], True, (40, 30, 25))
+                title_rect = title_surf.get_rect(center=(WINDOW_WIDTH // 2, start_y - 80))
+                screen.blit(title_surf, title_rect)
 
             btn_menu_pvp.label = lang_text["menu_pvp"]
             btn_menu_ai.label = lang_text["menu_ai"]
@@ -2811,7 +2918,7 @@ def run_game():
             btn_menu_exit.draw(screen, font_button, enabled=True)
 
         elif state == "credits":
-            panel_rect = pygame.Rect(center_x - 230, start_y - 80, 460, 360)
+            panel_rect = pygame.Rect(center_x - 230, start_y - 80, 500, 400)
             panel = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
             panel.fill((248, 244, 232, 235))
             screen.blit(panel, panel_rect.topleft)
@@ -3606,9 +3713,25 @@ def run_game():
                                 screen.blit(flag_surf, (value_rect.x + 8, value_rect.centery - flag_rect.height // 2))
                                 text_x = value_rect.x + 8 + flag_rect.width + 8
 
-                        value_surf = font_button.render(row["value_text"], True, (0, 0, 0))
-                        value_surf_rect = value_surf.get_rect(midleft=(text_x, value_rect.centery))
-                        screen.blit(value_surf, value_surf_rect)
+                        # Render checkbox-style UI for SFX toggles
+                        if row.get("key") in ("move_sfx_enabled", "death_sfx_enabled"):
+                            enabled_val = bool(getattr(settings, row.get("key"), True))
+                            checkbox_rect = pygame.Rect(value_rect.x + 8, value_rect.centery - 8, 18, 18)
+                            pygame.draw.rect(screen, (255, 255, 255), checkbox_rect, border_radius=4)
+                            pygame.draw.rect(screen, border_color, checkbox_rect, 2, border_radius=4)
+                            if enabled_val:
+                                cx = checkbox_rect.centerx
+                                cy = checkbox_rect.centery
+                                pygame.draw.line(screen, (20, 120, 20), (checkbox_rect.left + 4, cy), (cx - 1, checkbox_rect.bottom - 5), 3)
+                                pygame.draw.line(screen, (20, 120, 20), (cx - 1, checkbox_rect.bottom - 5), (checkbox_rect.right - 4, checkbox_rect.top + 4), 3)
+                            # Value text to the right of checkbox
+                            value_surf = font_button.render(row["value_text"], True, (0, 0, 0))
+                            value_surf_rect = value_surf.get_rect(midleft=(checkbox_rect.right + 8, value_rect.centery))
+                            screen.blit(value_surf, value_surf_rect)
+                        else:
+                            value_surf = font_button.render(row["value_text"], True, (0, 0, 0))
+                            value_surf_rect = value_surf.get_rect(midleft=(text_x, value_rect.centery))
+                            screen.blit(value_surf, value_surf_rect)
 
                         arrow_x = value_rect.right - 16
                         arrow_y = value_rect.centery

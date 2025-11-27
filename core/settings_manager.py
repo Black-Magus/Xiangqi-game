@@ -30,6 +30,11 @@ class Settings:
         self.music_volume = 80
         # Playlist: list of filenames under `assets/bgm` to play/loop
         self.music_playlist = []
+        # Sound effects settings
+        # Enable move sound effect
+        self.move_sfx_enabled = True
+        # Enable death/lose sound effect
+        self.death_sfx_enabled = True
 
 
 
@@ -58,6 +63,8 @@ def settings_to_dict(settings: Settings) -> Dict[str, Any]:
         "music_enabled": settings.music_enabled,
         "music_volume": settings.music_volume,
         "music_playlist": settings.music_playlist,
+        "move_sfx_enabled": settings.move_sfx_enabled,
+        "death_sfx_enabled": settings.death_sfx_enabled,
     }
 
 
@@ -148,6 +155,16 @@ def load_settings() -> Settings:
                 s.music_playlist = [str(x) for x in data.get("music_playlist")]
             except Exception:
                 s.music_playlist = []
+        if "move_sfx_enabled" in data:
+            try:
+                s.move_sfx_enabled = bool(data.get("move_sfx_enabled", True))
+            except Exception:
+                s.move_sfx_enabled = True
+        if "death_sfx_enabled" in data:
+            try:
+                s.death_sfx_enabled = bool(data.get("death_sfx_enabled", True))
+            except Exception:
+                s.death_sfx_enabled = True
 
     return s
 
