@@ -2,6 +2,8 @@ import os
 import math
 import pygame
 import threading
+import time
+import random
 
 from config import (
     BOARD_COLS,
@@ -868,7 +870,8 @@ def run_game():
                 "kind": "slider",
                 "enable_key": "music_enabled",
                 "max": 100,
-                "selected_label": f"{getattr(settings, 'music_volume', 80)}%",
+                # Do not show the numeric percentage next to the music slider
+                "selected_label": "",
             },
             # show current playing track in the music row label when available
             "music": {
@@ -1982,6 +1985,18 @@ def run_game():
 
         # If a worker result is ready, consume it and apply the move
         if ai_pending_move_holder is not None and ai_pending_move_holder.get("done"):
+            # If the worker finished but we haven't scheduled the visual delay yet,
+            # schedule a randomized delay between 1.5 and 3.0 seconds and wait
+            # on the main loop without blocking.
+            if not ai_pending_move_holder.get("apply_at"):
+                delay = random.uniform(1.5, 3.0)
+                ai_pending_move_holder["apply_at"] = time.time() + delay
+
+            # If it's not time to apply the move yet, return and keep thinking state
+            if time.time() < ai_pending_move_holder.get("apply_at", 0):
+                return
+
+            # Time to consume the worker result and apply the move
             res = ai_pending_move_holder.get("move")
             # reset holder and thinking flag
             ai_pending_move_holder = None
@@ -2830,16 +2845,23 @@ def run_game():
 
             panel_rect = pygame.Rect(panel_x - 20, MARGIN_Y - 30, WINDOW_WIDTH - panel_x - 20, WINDOW_HEIGHT - (MARGIN_Y - 30) - 40)
             panel_surf = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
-            # Try to draw selected side-panel background; fallback to plain fill
+            # Try to draw selected side-panel background; fallback to plain rounded fill
             side_bg = None
             try:
                 side_bg = load_side_panel_surface(panel_rect.size)
             except Exception:
                 side_bg = None
             if side_bg is not None:
-                panel_surf.blit(side_bg, (0, 0))
+                # Apply rounded mask so background image matches the outline's rounded corners
+                temp = side_bg.copy()
+                mask = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+                mask.fill((0, 0, 0, 0))
+                pygame.draw.rect(mask, (255, 255, 255, 255), mask.get_rect(), border_radius=10)
+                temp.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+                panel_surf.blit(temp, (0, 0))
             else:
-                panel_surf.fill((245, 245, 245, 215))
+                # Draw a filled rounded rect as the background
+                pygame.draw.rect(panel_surf, (245, 245, 245, 215), panel_surf.get_rect(), border_radius=10)
             screen.blit(panel_surf, panel_rect.topleft)
             pygame.draw.rect(screen, (50, 50, 50), panel_rect, 2, border_radius=10)
 
@@ -3550,11 +3572,12 @@ def run_game():
                         pygame.draw.circle(screen, knob_color, knob_center, 7)
                         pygame.draw.circle(screen, border_color, knob_center, 7, 2)
 
-                        # Percentage/text
-                        pct = int((float(cur_v) / float(max_v)) * 100) if max_v > 0 else 0
-                        pct_surf = font_button.render(f"{pct}%", True, (0, 0, 0) if enabled else (90, 90, 90))
-                        pct_rect = pct_surf.get_rect(midleft=(slider_area.right + 6, slider_area.centery))
-                        screen.blit(pct_surf, pct_rect)
+                        # Percentage/text (skip for music_volume to hide numeric indicator)
+                        if row.get("key") != "music_volume":
+                            pct = int((float(cur_v) / float(max_v)) * 100) if max_v > 0 else 0
+                            pct_surf = font_button.render(f"{pct}%", True, (0, 0, 0) if enabled else (90, 90, 90))
+                            pct_rect = pct_surf.get_rect(midleft=(slider_area.right + 6, slider_area.centery))
+                            screen.blit(pct_surf, pct_rect)
 
                         # Checkbox to enable/disable (if present)
                         if enable_key:

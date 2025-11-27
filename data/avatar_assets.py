@@ -100,6 +100,34 @@ def _surface_has_color(surf, sample_steps=8):
     return False
 
 
+def _surface_average_luminance(surf, sample_steps=8):
+    """Estimate the average luminance of non-transparent pixels on the surface."""
+    try:
+        w, h = surf.get_size()
+    except Exception:
+        return 0
+    if w == 0 or h == 0:
+        return 0
+
+    total = 0
+    count = 0
+    step_x = max(1, w // sample_steps)
+    step_y = max(1, h // sample_steps)
+
+    for y in range(0, h, step_y):
+        for x in range(0, w, step_x):
+            px = surf.get_at((x, y))
+            if len(px) >= 4 and px[3] == 0:
+                continue
+            r, g, b = px[0], px[1], px[2]
+            lum = int(0.299 * r + 0.587 * g + 0.114 * b)
+            total += lum
+            count += 1
+    if count == 0:
+        return 0
+    return total // count
+
+
 def load_avatar_image(path: str, size: int, grayscale: bool = False):
     if not path:
         return None
@@ -297,6 +325,9 @@ def get_piece_sprite(piece, settings: Settings, size: int):
 
     # Colourize symbol only when the symbol image is monochrome. If the
     # symbol PNG already contains colors, preserve the original color.
+    # For some symbol sets (e.g. modern) the black-side images may be
+    # white-on-transparent glyphs. In that case we should keep the white
+    # appearance instead of recolouring them to the theme's black colour.
     symbol_colored = symbol_img.copy()
     try:
         if not _surface_has_color(symbol_colored):
