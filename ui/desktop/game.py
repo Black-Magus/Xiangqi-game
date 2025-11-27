@@ -152,6 +152,17 @@ def run_game():
     max_screen_w, max_screen_h = screen_info.current_w, screen_info.current_h
 
     def compute_logical_width():
+        # When using the 'wide' resolution option we avoid expanding the
+        # internal logical canvas width beyond the base width. The previous
+        # behaviour created extra horizontal padding (left/right) which was
+        # rendered as dark/black bars. Keep the logical width equal to the
+        # base width for the 'wide' setting so the game content fills the
+        # window without side bars.
+        try:
+            if getattr(settings, "resolution_ratio", "") == "wide":
+                return base_width
+        except Exception:
+            pass
         return max(base_width, int(round(base_height * target_ratio)))
 
     logical_width = compute_logical_width()
@@ -3612,11 +3623,12 @@ def run_game():
                     opt_rect = opt_surf.get_rect(midleft=(opt_text_x, opt["rect"].centery))
                     screen.blit(opt_surf, opt_rect)
 
-                dropdown_bottom = layout["content_bottom"]
-                if layout["options"]:
-                    dropdown_bottom = max(dropdown_bottom, max(opt["rect"].bottom for opt in layout["options"]))
-
-                footer_top = max(dropdown_bottom + 30, WINDOW_HEIGHT - 120)
+                # Keep the footer (Back button) anchored to the bottom of the window.
+                # Do NOT include the dropdown option rects when calculating footer position,
+                # so opening a dropdown won't push the Back button upwards. Options will
+                # render earlier and the Back button is drawn afterwards so it remains
+                # visually on top.
+                footer_top = max(layout["content_bottom"] + 30, WINDOW_HEIGHT - 120)
                 footer_top = min(footer_top, WINDOW_HEIGHT - 70)
 
                 btn_settings_back.rect.center = (settings_center_x, footer_top)
@@ -4022,9 +4034,16 @@ def run_game():
         bg_window = load_background_surface((win_w, win_h))
         if bg_window is not None:
             window_surface.blit(bg_window, (0, 0))
-            dim_overlay = pygame.Surface((win_w, win_h), pygame.SRCALPHA)
-            dim_overlay.fill((0, 0, 0, 120))
-            window_surface.blit(dim_overlay, (0, 0))
+            # Avoid drawing a dark dim overlay when in 'wide' resolution mode
+            # because that produces visible dark bars at the sides. Only apply
+            # the dim overlay for other modes where centering/padding is used.
+            try:
+                if getattr(settings, "resolution_ratio", "") != "wide":
+                    dim_overlay = pygame.Surface((win_w, win_h), pygame.SRCALPHA)
+                    dim_overlay.fill((0, 0, 0, 120))
+                    window_surface.blit(dim_overlay, (0, 0))
+            except Exception:
+                pass
         else:
             window_surface.fill(fill_color)
         scaled_surface = pygame.transform.smoothscale(frame_surface, render_size)
