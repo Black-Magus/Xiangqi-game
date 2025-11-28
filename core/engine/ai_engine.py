@@ -4,18 +4,12 @@ import random
 from config import BOARD_COLS, BOARD_ROWS
 from core.engine.board import Board
 from core.engine.types import Side, PieceType, Move
-
 from core.engine.constants import AI_SIDE
-
-PIECE_VALUES = {
-    PieceType.GENERAL: 10000,
-    PieceType.ROOK: 600,
-    PieceType.CANNON: 300,
-    PieceType.HORSE: 300,
-    PieceType.ELEPHANT: 150,
-    PieceType.ADVISOR: 150,
-    PieceType.SOLDIER: 70,
-}
+from core.engine.evaluation import (
+    evaluate_board,
+    evaluate_piece_positional,  # exported for potential future move ordering tweaks
+    PIECE_VALUES,
+)
 
 AI_LEVELS = [
     {
@@ -79,77 +73,12 @@ AI_LEVELS = [
         "elo": 1850,
     },
 ]
+"""AI engine: search, move generation, and level configuration.
 
-
-def _evaluate_piece_positional(p, c, r) -> int:
-    bonus = 0
-
-    if p.ptype == PieceType.SOLDIER:
-        if p.side == Side.RED:
-            forward = 9 - r         
-            crossed_river = r <= 4
-        else:
-            forward = r
-            crossed_river = r >= 5
-
-        bonus += forward * 2
-        if crossed_river:
-            bonus += 25
-
-        if 3 <= c <= 5:
-            bonus += 6
-
-    elif p.ptype == PieceType.HORSE:
-        if 2 <= c <= 6:
-            bonus += 6
-        if 3 <= r <= 6:
-            bonus += 4
-
-    elif p.ptype == PieceType.ROOK:
-        bonus += max(0, 8 - 2 * abs(4 - c))
-
-    elif p.ptype == PieceType.CANNON:
-        if 2 <= c <= 6 and 2 <= r <= 7:
-            bonus += 8
-
-    elif p.ptype == PieceType.GENERAL:
-        if c == 4:
-            bonus += 10
-        if (p.side == Side.RED and r >= 7) or (p.side == Side.BLACK and r <= 2):
-            bonus += 6
-
-    elif p.ptype == PieceType.ELEPHANT:
-        if (p.side == Side.RED and r >= 5) or (p.side == Side.BLACK and r <= 4):
-            bonus += 6
-        if 2 <= c <= 6:
-            bonus += 4
-
-    elif p.ptype == PieceType.ADVISOR:
-        if c == 4 and ((p.side == Side.RED and r >= 8) or (p.side == Side.BLACK and r <= 1)):
-            bonus += 8
-
-    return bonus
-
-
-def evaluate_board(board: Board, ai_side: Side) -> int:
-    score = 0
-
-    for r in range(BOARD_ROWS):
-        for c in range(BOARD_COLS):
-            p = board.get_piece(c, r)
-            if p is None:
-                continue
-
-            base = PIECE_VALUES.get(p.ptype, 0)
-            pos_bonus = _evaluate_piece_positional(p, c, r)
-            piece_score = base + pos_bonus
-
-            if p.side == ai_side:
-                score += piece_score
-            else:
-                score -= piece_score
-
-    return score
+Refactored to delegate board evaluation to `evaluation.py` to reduce
+monolithic responsibilities and enable future improvements (e.g. phased
+evaluation, caching) without touching search code.
+"""
 
 
 def generate_all_legal_moves(board: Board, side: Side):

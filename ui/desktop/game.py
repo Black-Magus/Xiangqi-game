@@ -3946,6 +3946,38 @@ def run_game():
                     btn_settings_back.label = t(settings, "btn_back")
 
                     btn_settings_back.draw(screen, font_button, enabled=True)
+                else:
+                    # Render dropdown options (if any) for non-appearance categories.
+                    # Previously options only appeared in the appearance tab; this caused
+                    # dropdowns to never show for other categories.
+                    mx, my, _inside = to_game_coords(pygame.mouse.get_pos())
+                    for opt in layout["options"]:
+                        hovered = opt["rect"].collidepoint(mx, my)
+                        if hovered:
+                            bg = (180, 200, 255)
+                        elif opt["selected"]:
+                            bg = (200, 220, 255)
+                        else:
+                            bg = (225, 225, 225)
+                        pygame.draw.rect(screen, bg, opt["rect"], border_radius=6)
+                        pygame.draw.rect(screen, (60, 60, 60), opt["rect"], 1, border_radius=6)
+                        opt_text_x = opt["rect"].x + 10
+                        if opt.get("key") == "language":
+                            ofh = max(12, opt["rect"].height - 8)
+                            ofw = int(round(ofh * 1.6))
+                            opt_flag = load_flag_for_language(opt.get("value"), (ofw, ofh))
+                            if opt_flag:
+                                screen.blit(opt_flag, (opt["rect"].x + 6, opt["rect"].centery - opt_flag.get_height() // 2))
+                                opt_text_x = opt["rect"].x + 6 + opt_flag.get_width() + 8
+                        opt_surf = font_button.render(opt["text"], True, (0, 0, 0))
+                        opt_rect = opt_surf.get_rect(midleft=(opt_text_x, opt["rect"].centery))
+                        screen.blit(opt_surf, opt_rect)
+                    # Footer/back button placement for non-appearance categories
+                    footer_top = max(layout["content_bottom"] + 30, WINDOW_HEIGHT - 120)
+                    footer_top = min(footer_top, WINDOW_HEIGHT - 70)
+                    btn_settings_back.rect.center = (settings_center_x, footer_top)
+                    btn_settings_back.label = t(settings, "btn_back")
+                    btn_settings_back.draw(screen, font_button, enabled=True)
 
             else:
                 title_surf = font_title.render(t(settings, "stats_title"), True, (240, 240, 240))
@@ -4116,8 +4148,6 @@ def run_game():
                 detail_parts = []
                 if elo is not None:
                     detail_parts.append(f"ELO {elo}")
-                if depth is not None:
-                    detail_parts.append(f"Depth {depth}")
                 if randomness is not None and randomness > 0:
                     detail_parts.append(f"Rand {int(randomness*100)}%")
                 detail = " • "+" / ".join(detail_parts) if detail_parts else ""
