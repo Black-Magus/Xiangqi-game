@@ -315,3 +315,51 @@ class Board:
     def reset(self, red_on_bottom: bool = True):
         self.red_on_bottom = red_on_bottom
         self.setup_initial()
+
+    def is_insufficient_material(self) -> bool:
+        """Return True if neither side has mating material.
+
+        Simplified Xiangqi rule approximation: a side can potentially mate only
+        if it still has at least one of: ROOK, HORSE, CANNON, SOLDIER.
+        If BOTH sides have only pieces drawn from {GENERAL, ADVISOR, ELEPHANT},
+        declare the position a draw by insufficient material.
+
+        (Note: This is a pragmatic approximation; full Xiangqi endgame
+        tablebase logic is more complex. It satisfies the user's requirement
+        to declare a draw when required attacking pieces are absent.)
+        """
+        mating_types = {PieceType.ROOK, PieceType.HORSE, PieceType.CANNON, PieceType.SOLDIER}
+        defensive_types = {PieceType.GENERAL, PieceType.ADVISOR, PieceType.ELEPHANT}
+
+        red_has_mating = False
+        black_has_mating = False
+        red_piece_types = set()
+        black_piece_types = set()
+
+        for r in range(BOARD_ROWS):
+            for c in range(BOARD_COLS):
+                p = self.grid[r][c]
+                if p is None:
+                    continue
+                if p.side == Side.RED:
+                    red_piece_types.add(p.ptype)
+                    if p.ptype in mating_types:
+                        red_has_mating = True
+                else:
+                    black_piece_types.add(p.ptype)
+                    if p.ptype in mating_types:
+                        black_has_mating = True
+
+        # If a general is missing the game should already be over elsewhere;
+        # do not classify that as insufficient material.
+        if PieceType.GENERAL not in red_piece_types or PieceType.GENERAL not in black_piece_types:
+            return False
+
+        if red_has_mating or black_has_mating:
+            return False
+
+        # Both sides only have defensive pieces.
+        if (red_piece_types.issubset(defensive_types) and
+                black_piece_types.issubset(defensive_types)):
+            return True
+        return False

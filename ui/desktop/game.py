@@ -2000,7 +2000,18 @@ def run_game():
 
 
     def update_game_state_after_side_change():
-        nonlocal in_check_side, game_over, winner, result_recorded, replay_index
+        nonlocal in_check_side, game_over, winner, result_recorded, replay_index, selected, valid_moves, hovered_move
+        # Check for insufficient material draw before evaluating check/checkmate.
+        if not game_over and board.is_insufficient_material():
+            game_over = True
+            winner = None  # draw
+            in_check_side = None
+            selected = None
+            valid_moves = []
+            hovered_move = None
+            register_result_if_needed(None, True)
+            replay_index = len(move_history)
+            return
         if board.is_in_check(current_side):
             in_check_side = current_side
             if not board.has_any_legal_move(current_side):
