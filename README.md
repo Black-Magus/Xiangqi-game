@@ -26,3 +26,12 @@ This repository contains a **Xiangqi (Chinese Chess) game** implemented in **Pyt
 
 ```bash
 pip install pygame
+```
+
+## Screenshots
+
+![Board Overview](README_img/img1.png)
+
+![Piece Set](README_img/img2.png)
+
+![Gameplay Example](README_img/img3.png)
