@@ -507,6 +507,8 @@ def run_game():
     timer_thumbnail_cache = {}
     BACKGROUND_DIR = os.path.join(ASSETS_DIR, "bg")
     background_modal_open = False
+    # New AI level selection modal (opens instead of cycling levels on button)
+    ai_level_modal_open = False
     music_modal_open = False
     background_image_cache = {}
     background_scaled_cache = {}
@@ -537,6 +539,9 @@ def run_game():
     MODAL_BG_PATH = os.path.join(ASSETS_DIR, "menu", "modal_bg.png")
     modal_bg_image_cache = {}
     modal_bg_scaled_cache = {}
+    PREVIEW_BOARD_PATH = os.path.join(ASSETS_DIR, "menu", "preview_board.png")
+    preview_board_image_cache = {}
+    preview_board_scaled_cache = {}
     # Side panel backgrounds
     SIDE_PANEL_DIR = os.path.join(ASSETS_DIR, "menu", "sidemenu")
     SIDE_PANEL_IMAGE_CACHE = {}
@@ -1248,6 +1253,28 @@ def run_game():
 
         return {"modal_rect": modal_rect, "options": options, "close_rect": close_rect}
 
+    def build_ai_level_modal_layout():
+        # Vertical list showing AI levels with name and optional extra info
+        levels = AI_LEVELS
+        modal_width = min(520, WINDOW_WIDTH - 100)
+        item_h = 46
+        padding_x = 36
+        padding_y = 48
+        content_h = len(levels) * (item_h + 10)
+        modal_height = min(padding_y * 2 + content_h + 90, WINDOW_HEIGHT - 100)
+        modal_rect = pygame.Rect(0, 0, modal_width, modal_height)
+        modal_rect.center = (WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+        # No header: start options slightly lower for better spacing
+        start_y = modal_rect.y + padding_y + 28
+        options = []
+        for idx, lvl in enumerate(levels):
+            rect = pygame.Rect(modal_rect.x + padding_x, start_y + idx * (item_h + 10), modal_rect.width - padding_x * 2, item_h)
+            options.append({"index": idx, "level": lvl, "rect": rect})
+        close_rect = pygame.Rect(0, 0, 110, 38)
+        # Move the Back button a little higher so it's not too close to the bottom edge
+        close_rect.center = (modal_rect.centerx, modal_rect.bottom - 80)
+        return {"modal_rect": modal_rect, "options": options, "close_rect": close_rect}
+
     def build_music_modal_layout():
         # Build a vertical list modal showing available music files under assets/bgm
         bgm_dir = os.path.join(ASSETS_DIR, "bgm")
@@ -1477,6 +1504,29 @@ def run_game():
         img = load_modal_bg_image()
         surf = pygame.transform.smoothscale(img, size) if img is not None else None
         modal_bg_scaled_cache[size] = surf
+        return surf
+
+    def load_preview_board_image():
+        key = PREVIEW_BOARD_PATH
+        if key in preview_board_image_cache:
+            return preview_board_image_cache[key]
+        img = None
+        if os.path.exists(key):
+            try:
+                img = pygame.image.load(key)
+                img = img.convert_alpha() if img.get_alpha() is not None else img.convert()
+            except Exception:
+                img = None
+        preview_board_image_cache[key] = img
+        return img
+
+
+    def load_preview_board_surface(size):
+        if size in preview_board_scaled_cache:
+            return preview_board_scaled_cache[size]
+        img = load_preview_board_image()
+        surf = pygame.transform.smoothscale(img, size) if img is not None else None
+        preview_board_scaled_cache[size] = surf
         return surf
 
     # Timer modal positioning constants (tweak these to move title/subtitle/close button)
@@ -2173,6 +2223,8 @@ def run_game():
                         background_modal_open = False
                     elif side_panel_modal_open:
                         side_panel_modal_open = False
+                    elif ai_level_modal_open:
+                        ai_level_modal_open = False
                     else:
                         if state == "credits":
                             state = "menu"
@@ -2315,6 +2367,28 @@ def run_game():
                         if clicked_option is not None:
                             set_timer_option(clicked_option)
                             timer_modal_open = False
+                            continue
+                        continue
+                    else:
+                        continue
+
+                if ai_level_modal_open:
+                    layout = build_ai_level_modal_layout()
+                    if btn == 1:
+                        if not layout["modal_rect"].collidepoint(mx, my):
+                            ai_level_modal_open = False
+                            continue
+                        if layout["close_rect"].collidepoint(mx, my):
+                            ai_level_modal_open = False
+                            continue
+                        clicked_idx = None
+                        for opt in layout["options"]:
+                            if opt["rect"].collidepoint(mx, my):
+                                clicked_idx = opt["index"]
+                                break
+                        if clicked_idx is not None:
+                            ai_level_index = clicked_idx % len(AI_LEVELS)
+                            ai_level_modal_open = False
                             continue
                         continue
                     else:
@@ -2743,7 +2817,8 @@ def run_game():
                         continue
                     # AI level change
                     if state == "ai" and match_pending and btn_ai_level.is_clicked((mx, my)):
-                        ai_level_index = (ai_level_index + 1) % len(AI_LEVELS)
+                        # Open AI level selection modal instead of cycling
+                        ai_level_modal_open = True
                         continue
                     # Takeback clicked
                     if not game_over and btn_takeback.is_clicked((mx, my)):
@@ -3743,44 +3818,123 @@ def run_game():
                             arrow_pts = [(arrow_x - 6, arrow_y - 3), (arrow_x + 6, arrow_y - 3), (arrow_x, arrow_y + 5)]
                         pygame.draw.polygon(screen, (0, 0, 0), arrow_pts)
 
-                # detect mouse and apply hover effect on options
-                mx, my, _inside = to_game_coords(pygame.mouse.get_pos())
-                for opt in layout["options"]:
-                    hovered = opt["rect"].collidepoint(mx, my)
-                    if hovered:
-                        bg = (180, 200, 255)
-                    elif opt["selected"]:
-                        bg = (200, 220, 255)
-                    else:
-                        bg = (225, 225, 225)
-                    pygame.draw.rect(screen, bg, opt["rect"], border_radius=6)
-                    pygame.draw.rect(screen, (60, 60, 60), opt["rect"], 1, border_radius=6)
-                    # Draw flag for language options when available
-                    opt_text_x = opt["rect"].x + 10
-                    if opt.get("key") == "language":
-                        ofh = max(12, opt["rect"].height - 8)
-                        ofw = int(round(ofh * 1.6))
-                        opt_flag = load_flag_for_language(opt.get("value"), (ofw, ofh))
-                        if opt_flag:
-                            screen.blit(opt_flag, (opt["rect"].x + 6, opt["rect"].centery - opt_flag.get_height() // 2))
-                            opt_text_x = opt["rect"].x + 6 + opt_flag.get_width() + 8
+                # Options are drawn later so dropdowns render above the preview
 
-                    opt_surf = font_button.render(opt["text"], True, (0, 0, 0))
-                    opt_rect = opt_surf.get_rect(midleft=(opt_text_x, opt["rect"].centery))
-                    screen.blit(opt_surf, opt_rect)
+                # For Appearance category show a preview board with the current piece appearance
+                if settings_category == "appearance":
+                    try:
+                        # choose a preview width based on the settings panel width so
+                        # the preview scales correctly when the window or panel is resized.
+                        # Leave a small margin inside the panel and clamp between
+                        # sensible min/max values to avoid very small or huge previews.
+                        # Compute preview width based on panel inner width and clamp
+                        inner_w = max(40, settings_panel_rect.width - 40)
+                        preview_w = min(520, inner_w)
+                        preview_w = max(120, preview_w)
+                        preview_h = int(preview_w * 0.58)
 
-                # Keep the footer (Back button) anchored to the bottom of the window.
-                # Do NOT include the dropdown option rects when calculating footer position,
-                # so opening a dropdown won't push the Back button upwards. Options will
-                # render earlier and the Back button is drawn afterwards so it remains
-                # visually on top.
-                footer_top = max(layout["content_bottom"] + 30, WINDOW_HEIGHT - 120)
-                footer_top = min(footer_top, WINDOW_HEIGHT - 70)
+                        # Ensure preview fits vertically in the remaining panel space
+                        avail_h = settings_panel_rect.bottom - (layout["content_bottom"] + 18) - 20
+                        if avail_h > 0 and preview_h > avail_h:
+                            scale = float(avail_h) / float(preview_h)
+                            preview_h = max(40, int(preview_h * scale))
+                            preview_w = max(40, int(preview_w * scale))
 
-                btn_settings_back.rect.center = (settings_center_x, footer_top)
-                btn_settings_back.label = t(settings, "btn_back")
+                        preview_surf = load_preview_board_surface((preview_w, preview_h))
 
-                btn_settings_back.draw(screen, font_button, enabled=True)
+                        # Center horizontally inside the settings panel (not the whole window)
+                        preview_x = settings_panel_rect.x + (settings_panel_rect.width - preview_w) // 2
+
+                        # Position vertically below the content but clamp inside the panel
+                        preview_y = layout["content_bottom"] + 18
+                        if preview_y + preview_h > settings_panel_rect.bottom - 20:
+                            preview_y = max(layout["content_bottom"] + 8, settings_panel_rect.bottom - preview_h - 20)
+
+                        preview_rect = pygame.Rect(preview_x, preview_y, preview_w, preview_h)
+
+                        # Draw background panel for preview
+                        pygame.draw.rect(screen, (30, 30, 36), preview_rect, border_radius=8)
+                        pygame.draw.rect(screen, (80, 80, 80), preview_rect, 2, border_radius=8)
+
+                        # Blit preview board artwork if available
+                        if preview_surf is not None:
+                            try:
+                                surf_scaled = preview_surf
+                                screen.blit(surf_scaled, preview_rect.topleft)
+                            except Exception:
+                                pass
+
+                        # Overlay a few sample pieces rendered using current piece theme
+                        try:
+                            from core.engine.types import Piece
+
+                            sample_piece_types = [
+                                PieceType.ROOK,
+                                PieceType.HORSE,
+                                PieceType.CANNON,
+                                PieceType.SOLDIER,
+                                PieceType.GENERAL,
+                            ]
+                            # sprite size relative to preview height
+                            sprite_size = max(12, int(preview_h * 0.36))
+                            cols = len(sample_piece_types)
+                            gap_x = preview_w // (cols + 1)
+                            center_y = preview_y + preview_h // 2
+                            for i, ptype in enumerate(sample_piece_types):
+                                side = Side.RED if i % 2 == 0 else Side.BLACK
+                                piece = Piece(side, ptype)
+                                spr = get_piece_sprite(piece, settings, sprite_size)
+                                if spr is None:
+                                    continue
+                                sx = preview_x + (i + 1) * gap_x - spr.get_width() // 2
+                                sy = center_y - spr.get_height() // 2
+                                screen.blit(spr, (sx, sy))
+                        except Exception:
+                            pass
+
+                    except Exception:
+                        pass
+
+                    # After drawing the preview, render the dropdown option list so
+                    # it appears above the preview artwork (prevents preview from
+                    # hiding open dropdowns).
+                    mx, my, _inside = to_game_coords(pygame.mouse.get_pos())
+                    for opt in layout["options"]:
+                        hovered = opt["rect"].collidepoint(mx, my)
+                        if hovered:
+                            bg = (180, 200, 255)
+                        elif opt["selected"]:
+                            bg = (200, 220, 255)
+                        else:
+                            bg = (225, 225, 225)
+                        pygame.draw.rect(screen, bg, opt["rect"], border_radius=6)
+                        pygame.draw.rect(screen, (60, 60, 60), opt["rect"], 1, border_radius=6)
+                        # Draw flag for language options when available
+                        opt_text_x = opt["rect"].x + 10
+                        if opt.get("key") == "language":
+                            ofh = max(12, opt["rect"].height - 8)
+                            ofw = int(round(ofh * 1.6))
+                            opt_flag = load_flag_for_language(opt.get("value"), (ofw, ofh))
+                            if opt_flag:
+                                screen.blit(opt_flag, (opt["rect"].x + 6, opt["rect"].centery - opt_flag.get_height() // 2))
+                                opt_text_x = opt["rect"].x + 6 + opt_flag.get_width() + 8
+
+                        opt_surf = font_button.render(opt["text"], True, (0, 0, 0))
+                        opt_rect = opt_surf.get_rect(midleft=(opt_text_x, opt["rect"].centery))
+                        screen.blit(opt_surf, opt_rect)
+
+                    # Keep the footer (Back button) anchored to the bottom of the window.
+                    # Do NOT include the dropdown option rects when calculating footer position,
+                    # so opening a dropdown won't push the Back button upwards. Options will
+                    # render earlier and the Back button is drawn afterwards so it remains
+                    # visually on top.
+                    footer_top = max(layout["content_bottom"] + 30, WINDOW_HEIGHT - 120)
+                    footer_top = min(footer_top, WINDOW_HEIGHT - 70)
+
+                    btn_settings_back.rect.center = (settings_center_x, footer_top)
+                    btn_settings_back.label = t(settings, "btn_back")
+
+                    btn_settings_back.draw(screen, font_button, enabled=True)
 
             else:
                 title_surf = font_title.render(t(settings, "stats_title"), True, (240, 240, 240))
@@ -3894,6 +4048,75 @@ def run_game():
                     surf_ln = font_button.render(ln, True, (25, 25, 25))
                     surf_rect = surf_ln.get_rect(midtop=(rect.centerx, thumb_rect.bottom + 6 + i * line_h))
                     screen.blit(surf_ln, surf_rect)
+
+        # AI level modal rendering
+        if ai_level_modal_open:
+            overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 160))
+            screen.blit(overlay, (0, 0))
+            layout = build_ai_level_modal_layout()
+            modal_rect = layout["modal_rect"]
+            modal_bg_surf = load_modal_bg_surface(modal_rect.size)
+            if modal_bg_surf is not None:
+                try:
+                    screen.blit(modal_bg_surf, modal_rect.topleft)
+                except Exception:
+                    pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            else:
+                pygame.draw.rect(screen, (245, 245, 245), modal_rect, border_radius=12)
+            pygame.draw.rect(screen, (60, 60, 60), modal_rect, 2, border_radius=12)
+
+            close_rect = layout["close_rect"]
+            pygame.draw.rect(screen, (225, 225, 225), close_rect, border_radius=8)
+            pygame.draw.rect(screen, (90, 90, 90), close_rect, 1, border_radius=8)
+            close_label = t(settings, "btn_back") if "btn_back" in TEXT.get(settings.language, {}) else "Back"
+            close_surf = font_button.render(close_label, True, (25, 25, 25))
+            screen.blit(close_surf, close_surf.get_rect(center=close_rect.center))
+
+            for opt in layout["options"]:
+                rect = opt["rect"]
+                idx = opt["index"]
+                lvl = opt["level"]
+                is_selected = idx == ai_level_index
+                bg = (235, 235, 235) if is_selected else (220, 220, 220)
+                border_color = (190, 60, 60) if is_selected else (90, 90, 90)
+                pygame.draw.rect(screen, bg, rect, border_radius=10)
+                pygame.draw.rect(screen, border_color, rect, 2, border_radius=10)
+                # Avatar
+                avatar_size = rect.height - 12
+                avatar_center = (rect.x + 12 + avatar_size // 2, rect.centery)
+                try:
+                    draw_ai_avatar(screen, lvl, avatar_center, avatar_size, font_avatar, grayscale=False, dim=False)
+                except Exception:
+                    # fallback simple colored box
+                    pygame.draw.rect(screen, lvl.get("color", (150,150,150)), pygame.Rect(avatar_center[0]-avatar_size//2, avatar_center[1]-avatar_size//2, avatar_size, avatar_size))
+                if is_selected:
+                    # subtle highlight overlay
+                    highlight = pygame.Surface((avatar_size, avatar_size), pygame.SRCALPHA)
+                    highlight.fill((255, 255, 255, 40))
+                    screen.blit(highlight, (avatar_center[0]-avatar_size//2, avatar_center[1]-avatar_size//2))
+                # Text block shifted right of avatar
+                text_left = rect.x + 24 + avatar_size
+                name = lvl.get("name", f"Level {idx+1}")
+                # Build detail string: ELO + depth info
+                elo = lvl.get("elo")
+                depth = lvl.get("depth")
+                randomness = lvl.get("randomness")
+                detail_parts = []
+                if elo is not None:
+                    detail_parts.append(f"ELO {elo}")
+                if depth is not None:
+                    detail_parts.append(f"Depth {depth}")
+                if randomness is not None and randomness > 0:
+                    detail_parts.append(f"Rand {int(randomness*100)}%")
+                detail = " • "+" / ".join(detail_parts) if detail_parts else ""
+                name_surf = font_button.render(name, True, (30, 30, 30))
+                name_rect = name_surf.get_rect(midleft=(text_left, rect.centery - 12))
+                screen.blit(name_surf, name_rect)
+                if detail:
+                    detail_surf = font_text.render(str(detail), True, (70, 70, 70))
+                    detail_rect = detail_surf.get_rect(midleft=(text_left, rect.centery + 4))
+                    screen.blit(detail_surf, detail_rect)
         # Side panel modal rendering
         if side_panel_modal_open and SIDE_PANEL_BACKGROUNDS:
             overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
